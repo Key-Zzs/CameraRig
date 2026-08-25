@@ -38,9 +38,11 @@ consumer such as PointCloudBuilder
 The final arrow is a consumer relationship only. CameraRig does not implement or import
 the consumer.
 
-`TargetDetector` is a plugin protocol. No target detector is registered or implemented
-in the core package. Moving-camera calibration modules are reserved interfaces whose
-calls raise `FeatureNotAvailableError`; they do not return placeholders.
+`TargetDetector` is a plugin protocol with a small built-in registry. The optional
+ChArUco implementation is isolated under `camera_rig.targets.charuco`; neither the core
+package nor generic target contracts import OpenCV. Moving-camera calibration modules
+are reserved interfaces whose calls raise `FeatureNotAvailableError`; they do not return
+placeholders.
 
 ## Dependency direction
 

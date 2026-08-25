@@ -31,6 +31,12 @@ Install the official RealSense wheel and PNG preview support for D435i acquisiti
 python -m pip install -e ".[dev,realsense,viz]"
 ```
 
+Install the ChArUco target generator and detector dependencies:
+
+```bash
+python -m pip install -e ".[charuco]"
+```
+
 Keep the physical device serial in a private, ignored configuration. The public example
 uses `REPLACE_WITH_DEVICE_SERIAL` deliberately.
 
@@ -78,6 +84,31 @@ camera-rig capture snapshot \
   --output .local/artifacts/sequence
 camera-rig replay validate --artifact .local/artifacts/sequence
 ```
+
+Generate the standard printable ChArUco board, detect it in one image, or validate all
+color frames in a snapshot artifact:
+
+```bash
+camera-rig target generate \
+  --config configs/targets/charuco_a4_v1.yaml \
+  --output .local/targets/charuco_a4_v1
+camera-rig target detect \
+  --target .local/targets/charuco_a4_v1/target_spec.json \
+  --image image.png \
+  --output .local/reports/detection.json \
+  --overlay .local/overlays/detection.png
+camera-rig target validate-artifact \
+  --target .local/targets/charuco_a4_v1/target_spec.json \
+  --artifact .local/artifacts/sequence \
+  --stream color \
+  --report .local/reports/target-validation.json \
+  --overlays .local/overlays/target-validation
+```
+
+`TargetDetector` is a hardware-independent plugin contract. The ChArUco implementation
+returns image points, stable point IDs, persisted canonical target points, and 2D quality
+metrics; it does not estimate target pose or camera extrinsics. See
+[docs/charuco-target.md](docs/charuco-target.md) for print and validation details.
 
 Configuration uses a singular `camera` root. Unknown fields, a plural `cameras` root,
 unknown streams, invalid dimensions or frame rates, and non-string serial numbers are

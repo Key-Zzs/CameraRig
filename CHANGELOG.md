@@ -7,6 +7,25 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-25
+
+### Added
+
+- A hardware-independent `TargetDetector` plugin contract and a strict ChArUco target
+  specification using persisted canonical corner geometry.
+- Deterministic A4 target generation with independent print-scale rulers, resolved
+  provenance, single-image detection, capture-artifact validation, diagnostic overlays,
+  and temporal jitter statistics.
+- Synthetic distortion, partial-visibility, wrong-dictionary, geometry, packaging, and
+  physical D435i validation coverage.
+
+### Changed
+
+- Package version is now 0.3.0.
+- Capture reports record their acceptance thresholds. The aggregate median coverage
+  floor is 5%, matching the per-frame detector floor and the validated fixed-workspace
+  deployment while retaining the corner-hull coverage definition.
+
 ## [0.2.0] - 2026-08-25
 
 ### Added

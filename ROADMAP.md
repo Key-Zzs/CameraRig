@@ -43,6 +43,9 @@ have been validated.
 Implement the first target-detection plugin using ChArUco. AprilGrid remains planned and
 is not implemented in this item.
 
+Status: implemented and hardware validated with a physically measured, rigidly mounted
+board and a 60-frame D435i capture.
+
 ## R7 Fixed-Camera Extrinsic Calibration
 
 Estimate, validate, and persist a fixed camera's transform to its parent frame.

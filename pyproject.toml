@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camera-rig"
-version = "0.2.0"
+version = "0.3.0"
 description = "Single-camera acquisition, calibration, validation, and replay contracts"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,6 +30,10 @@ realsense = [
 ]
 viz = [
   "Pillow>=10,<13",
+]
+charuco = [
+  "opencv-contrib-python-headless==4.14.0.94",
+  "reportlab>=4.2,<5",
 ]
 dev = [
   "build>=1.2",
@@ -74,10 +78,13 @@ strict = true
 packages = ["camera_rig"]
 
 [[tool.mypy.overrides]]
-module = ["PIL", "PIL.*"]
+module = ["cv2", "cv2.*", "PIL", "PIL.*", "reportlab", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
 testpaths = ["tests"]
-markers = ["hardware: requires physical camera hardware"]
+markers = [
+  "hardware: requires physical camera hardware",
+  "charuco: requires the charuco optional dependency",
+]

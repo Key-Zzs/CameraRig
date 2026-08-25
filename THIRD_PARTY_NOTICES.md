@@ -9,7 +9,9 @@ CameraRig uses these runtime dependencies under their respective licenses:
 Optional hardware and visualization features use:
 
 - Intel RealSense SDK Python bindings (`pyrealsense2`)
+- OpenCV contrib Python headless (`opencv-contrib-python-headless`)
 - Pillow
+- ReportLab
 
 Development and verification use the following separately licensed tools:
 

@@ -56,3 +56,72 @@ class TargetObservation:
         object.__setattr__(self, "object_points_m", object_points)
         object.__setattr__(self, "image_size", tuple(self.image_size))
         object.__setattr__(self, "metadata", string_keyed_copy(self.metadata, "metadata"))
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the observation without pickle or detector-specific types."""
+        return {
+            "plugin_name": self.plugin_name,
+            "target_frame": self.target_frame,
+            "point_ids": list(self.point_ids),
+            "image_points_px": self.image_points_px.tolist(),
+            "object_points_m": self.object_points_m.tolist(),
+            "image_size": list(self.image_size),
+            "quality": self.quality.to_dict(),
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> TargetObservation:
+        """Reconstruct a persisted observation for later pose consumers."""
+        try:
+            expected_fields = {
+                "plugin_name",
+                "target_frame",
+                "point_ids",
+                "image_points_px",
+                "object_points_m",
+                "image_size",
+                "quality",
+                "metadata",
+            }
+            if set(data) != expected_fields:
+                raise TypeError("observation has missing or unknown fields")
+            point_ids_value = data["point_ids"]
+            image_size_value = data["image_size"]
+            quality_value = data["quality"]
+            metadata_value = data.get("metadata", {})
+            if not isinstance(point_ids_value, list):
+                raise TypeError("point_ids must be an array")
+            if not isinstance(image_size_value, list) or len(image_size_value) != 2:
+                raise TypeError("image_size must be a two-element array")
+            if not isinstance(quality_value, dict) or not isinstance(metadata_value, dict):
+                raise TypeError("quality and metadata must be objects")
+            if not all(isinstance(key, str) for key in metadata_value):
+                raise TypeError("metadata keys must be strings")
+            return cls(
+                plugin_name=_decoded_string(data["plugin_name"], "plugin_name"),
+                target_frame=_decoded_string(data["target_frame"], "target_frame"),
+                point_ids=tuple(_decoded_int(value, "point_ids[]") for value in point_ids_value),
+                image_points_px=np.asarray(data["image_points_px"], dtype=np.float64),
+                object_points_m=np.asarray(data["object_points_m"], dtype=np.float64),
+                image_size=(
+                    _decoded_int(image_size_value[0], "image_size[0]"),
+                    _decoded_int(image_size_value[1], "image_size[1]"),
+                ),
+                quality=QualityReport.from_dict(dict(quality_value)),
+                metadata=dict(metadata_value),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ContractError(f"invalid persisted target observation: {error}") from error
+
+
+def _decoded_string(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    return value
+
+
+def _decoded_int(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    return value

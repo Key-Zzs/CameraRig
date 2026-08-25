@@ -10,7 +10,7 @@ from camera_rig.cli.main import main
 
 
 def test_package_exposes_version() -> None:
-    assert camera_rig.__version__ == "0.2.0"
+    assert camera_rig.__version__ == "0.3.0"
 
 
 def test_cli_help() -> None:
