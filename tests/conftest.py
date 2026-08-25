@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,6 +13,8 @@ from camera_rig.core.intrinsics import CameraIntrinsics
 from camera_rig.core.quality import QualityReport
 from camera_rig.core.stream import StreamProfile
 from camera_rig.core.transforms import RigidTransform
+
+REPOSITORY_ROOT = Path(__file__).parents[1]
 
 
 @pytest.fixture
@@ -86,3 +89,17 @@ def sample_bundle(
         quality=quality,
         provenance={"source": "synthetic-test", "real_hardware": False},
     )
+
+
+@pytest.fixture(scope="session")
+def generated_charuco_target(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    pytest.importorskip("cv2")
+    pytest.importorskip("reportlab")
+    from camera_rig.targets.charuco.generator import generate_target_artifact
+    from camera_rig.targets.charuco.spec import load_charuco_target_spec
+
+    output = tmp_path_factory.mktemp("charuco") / "target"
+    config = REPOSITORY_ROOT / "configs/targets/charuco_a4_v1.yaml"
+    report = generate_target_artifact(load_charuco_target_spec(config), output)
+    assert report["status"] == "PASS"
+    return output

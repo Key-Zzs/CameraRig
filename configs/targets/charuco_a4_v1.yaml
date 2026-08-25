@@ -1,0 +1,26 @@
+schema_version: camera-rig.target.charuco.v1
+
+target:
+  name: charuco_a4_v1
+  plugin: charuco
+  target_frame: charuco_target
+  dictionary: DICT_5X5_100
+  squares_x: 7
+  squares_y: 5
+  square_length_m: 0.030
+  marker_length_m: 0.022
+  border_bits: 1
+  legacy_pattern: false
+
+coordinate_frame:
+  origin: outer_bottom_left
+  x_axis: board_right
+  y_axis: board_up
+  z_axis: out_of_printed_face
+
+print:
+  page_size: A4
+  orientation: landscape
+  dpi: 600
+  horizontal_check_length_mm: 100.0
+  vertical_check_length_mm: 100.0

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Key-Zzs/CameraRig/schemas/charuco_target.v1.schema.json",
+  "title": "CameraRig ChArUco target source configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "target", "coordinate_frame", "print"],
+  "properties": {
+    "schema_version": {"const": "camera-rig.target.charuco.v1"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name", "plugin", "target_frame", "dictionary", "squares_x", "squares_y",
+        "square_length_m", "marker_length_m", "border_bits", "legacy_pattern"
+      ],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "plugin": {"const": "charuco"},
+        "target_frame": {"type": "string", "minLength": 1},
+        "dictionary": {
+          "enum": [
+            "DICT_4X4_50", "DICT_4X4_100", "DICT_4X4_250", "DICT_4X4_1000",
+            "DICT_5X5_50", "DICT_5X5_100", "DICT_5X5_250", "DICT_5X5_1000",
+            "DICT_6X6_50", "DICT_6X6_100", "DICT_6X6_250", "DICT_6X6_1000",
+            "DICT_7X7_50", "DICT_7X7_100", "DICT_7X7_250", "DICT_7X7_1000",
+            "DICT_ARUCO_ORIGINAL"
+          ]
+        },
+        "squares_x": {"type": "integer", "minimum": 3},
+        "squares_y": {"type": "integer", "minimum": 3},
+        "square_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "marker_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "border_bits": {"type": "integer", "minimum": 1},
+        "legacy_pattern": {"type": "boolean"}
+      }
+    },
+    "coordinate_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "x_axis", "y_axis", "z_axis"],
+      "properties": {
+        "origin": {"const": "outer_bottom_left"},
+        "x_axis": {"const": "board_right"},
+        "y_axis": {"const": "board_up"},
+        "z_axis": {"const": "out_of_printed_face"}
+      }
+    },
+    "print": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_size", "orientation", "dpi", "horizontal_check_length_mm",
+        "vertical_check_length_mm"
+      ],
+      "properties": {
+        "page_size": {"const": "A4"},
+        "orientation": {"const": "landscape"},
+        "dpi": {"type": "integer", "exclusiveMinimum": 0},
+        "horizontal_check_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "vertical_check_length_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}
