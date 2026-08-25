@@ -31,6 +31,8 @@ def test_valid_yaml() -> None:
     assert config.camera.serial == "344522070241"
     assert config.camera.output_reference_stream == "ir_left"
     assert set(config.streams) == {"color", "depth", "ir_left", "ir_right"}
+    assert config.capture.sync.max_comparable_stream_skew_ms == 5.0
+    assert config.capture.sync.require_stereo_frame_number_match
 
 
 @pytest.mark.parametrize("content", ["", "- not\n- a\n- mapping\n"])
@@ -103,6 +105,29 @@ def test_unknown_stream_name_is_rejected(tmp_path: Path) -> None:
     assert isinstance(streams, dict)
     streams["fisheye"] = copy.deepcopy(streams["color"])
     with pytest.raises(SchemaValidationError, match=r"\$\.streams"):
+        load_config(_write_yaml(tmp_path, data))
+
+
+def test_explicit_capture_sync_settings_are_strict(tmp_path: Path) -> None:
+    data = _example_data()
+    capture = data["capture"]
+    assert isinstance(capture, dict)
+    capture["required_streams"] = ["color", "depth", "ir_left", "ir_right"]
+    capture["sync"] = {
+        "max_comparable_stream_skew_ms": 2.5,
+        "require_stereo_frame_number_match": True,
+    }
+    config = load_config(_write_yaml(tmp_path, data))
+    assert config.capture.required_streams == ("color", "depth", "ir_left", "ir_right")
+    assert config.capture.sync.max_comparable_stream_skew_ms == 2.5
+
+
+def test_unknown_capture_sync_field_is_rejected(tmp_path: Path) -> None:
+    data = _example_data()
+    capture = data["capture"]
+    assert isinstance(capture, dict)
+    capture["sync"] = {"align_depth": True}
+    with pytest.raises(SchemaValidationError, match=r"\$\.capture\.sync"):
         load_config(_write_yaml(tmp_path, data))
 
 

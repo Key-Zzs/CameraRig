@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
-from collections.abc import Mapping
-from typing import Any, Protocol
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol, cast
+
+import numpy as np
+import numpy.typing as npt
 
 from camera_rig.core.errors import MissingOptionalDependencyError
 from camera_rig.core.stream import StreamProfile
@@ -49,6 +52,20 @@ class SDKAdapter(Protocol):
     def depth_scale(self, pipeline_profile: object) -> float: ...
 
     def wait_for_frames(self, pipeline: object, timeout_ms: int) -> object: ...
+
+    def poll_for_frames(self, pipeline: object) -> object | None: ...
+
+    def frameset_frames(self, frameset: object) -> dict[str, object]: ...
+
+    def frame_array(self, frame: object) -> npt.NDArray[np.generic]: ...
+
+    def frame_number(self, frame: object) -> int: ...
+
+    def frame_timestamp(self, frame: object) -> float: ...
+
+    def frame_timestamp_domain(self, frame: object) -> str: ...
+
+    def frame_metadata(self, frame: object) -> dict[str, object]: ...
 
     def stop(self, pipeline: object) -> None: ...
 
@@ -197,6 +214,64 @@ class RealSenseSDKAdapter:
 
     def wait_for_frames(self, pipeline: object, timeout_ms: int) -> object:
         return pipeline.wait_for_frames(timeout_ms)  # type: ignore[attr-defined]
+
+    def poll_for_frames(self, pipeline: object) -> object | None:
+        frameset = pipeline.poll_for_frames()  # type: ignore[attr-defined]
+        return frameset or None
+
+    def frameset_frames(self, frameset: object) -> dict[str, object]:
+        getters: dict[str, Callable[[], object]] = {
+            "color": lambda: frameset.get_color_frame(),  # type: ignore[attr-defined]
+            "depth": lambda: frameset.get_depth_frame(),  # type: ignore[attr-defined]
+            "ir_left": lambda: frameset.get_infrared_frame(1),  # type: ignore[attr-defined]
+            "ir_right": lambda: frameset.get_infrared_frame(2),  # type: ignore[attr-defined]
+        }
+        result: dict[str, object] = {}
+        for name, getter in getters.items():
+            frame = getter()
+            if frame:
+                result[name] = frame
+        return result
+
+    def frame_array(self, frame: object) -> npt.NDArray[np.generic]:
+        value = frame.get_data()  # type: ignore[attr-defined]
+        return cast(npt.NDArray[np.generic], np.asanyarray(value))
+
+    def frame_number(self, frame: object) -> int:
+        return int(frame.get_frame_number())  # type: ignore[attr-defined]
+
+    def frame_timestamp(self, frame: object) -> float:
+        return float(frame.get_timestamp())  # type: ignore[attr-defined]
+
+    def frame_timestamp_domain(self, frame: object) -> str:
+        value = frame.get_frame_timestamp_domain()  # type: ignore[attr-defined]
+        return _enum_suffix(value)
+
+    def frame_metadata(self, frame: object) -> dict[str, object]:
+        names = (
+            "frame_counter",
+            "frame_timestamp",
+            "sensor_timestamp",
+            "backend_timestamp",
+            "time_of_arrival",
+            "actual_fps",
+            "actual_exposure",
+            "gain_level",
+            "frame_laser_power",
+            "frame_emitter_mode",
+            "white_balance",
+        )
+        result: dict[str, object] = {}
+        for name in names:
+            enum_value = getattr(self.rs.frame_metadata_value, name, None)
+            if enum_value is None:
+                continue
+            try:
+                if frame.supports_frame_metadata(enum_value):  # type: ignore[attr-defined]
+                    result[name] = frame.get_frame_metadata(enum_value)  # type: ignore[attr-defined]
+            except RuntimeError:
+                continue
+        return result
 
     def stop(self, pipeline: object) -> None:
         pipeline.stop()  # type: ignore[attr-defined]

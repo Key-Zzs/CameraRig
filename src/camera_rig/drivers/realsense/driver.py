@@ -103,6 +103,14 @@ class RealSenseDriver:
         except Exception as error:
             raise _mapped_error(error) from error
 
+    def poll_for_frames(self) -> object | None:
+        if self._pipeline is None or not self._started:
+            raise LifecycleError("RealSense driver is not streaming")
+        try:
+            return self.adapter.poll_for_frames(self._pipeline)
+        except Exception as error:
+            raise _mapped_error(error) from error
+
     def close(self) -> None:
         if self._state in {CameraLifecycleState.CREATED, CameraLifecycleState.CLOSED}:
             self._state = CameraLifecycleState.CLOSED

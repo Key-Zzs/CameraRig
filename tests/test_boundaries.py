@@ -10,6 +10,7 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 def test_source_has_no_forbidden_implementation_dependencies() -> None:
     forbidden = (
         "cv2.aruco",
+        "import cv2",
         "PointCloudBuilder",
         "FFS",
         "MultiCamera",

@@ -7,6 +7,7 @@ from camera_rig.config.models import (
     CameraSettings,
     CaptureSettings,
     StreamSettings,
+    SyncSettings,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "CameraSettings",
     "CaptureSettings",
     "StreamSettings",
+    "SyncSettings",
     "load_config",
 ]

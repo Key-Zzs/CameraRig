@@ -35,18 +35,35 @@ class StreamSettings:
 
 
 @dataclass(frozen=True)
+class SyncSettings:
+    """Validation thresholds for streams inside one device frameset."""
+
+    max_comparable_stream_skew_ms: float = 5.0
+    require_stereo_frame_number_match: bool = True
+
+    def __post_init__(self) -> None:
+        if self.max_comparable_stream_skew_ms < 0:
+            raise ContractError("max_comparable_stream_skew_ms must be non-negative")
+
+
+@dataclass(frozen=True)
 class CaptureSettings:
     """Device-local capture behavior configuration contract."""
 
     warmup_frames: int
     timeout_ms: int
     copy_frames: bool
+    required_streams: tuple[str, ...] = ()
+    sync: SyncSettings = SyncSettings()
 
     def __post_init__(self) -> None:
         require_non_negative_int(self.warmup_frames, "warmup_frames")
         require_non_negative_int(self.timeout_ms, "timeout_ms")
         if self.timeout_ms == 0:
             raise ContractError("timeout_ms must be greater than zero")
+        object.__setattr__(self, "required_streams", tuple(self.required_streams))
+        if len(set(self.required_streams)) != len(self.required_streams):
+            raise ContractError("required_streams must not contain duplicates")
 
 
 @dataclass(frozen=True)
@@ -70,6 +87,13 @@ class CameraConfig:
         if not reference.enabled:
             raise ContractError("output_reference_stream must be enabled")
         object.__setattr__(self, "streams", streams)
+        required = self.capture.required_streams or tuple(
+            name for name, settings in streams.items() if settings.enabled
+        )
+        for name in required:
+            settings = streams.get(name)
+            if settings is None or not settings.enabled:
+                raise ContractError(f"required stream {name!r} must be configured and enabled")
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> CameraConfig:
@@ -77,6 +101,10 @@ class CameraConfig:
         camera_data = _object(data["camera"], "camera")
         streams_data = _object(data["streams"], "streams")
         capture_data = _object(data["capture"], "capture")
+        sync_data = _object(capture_data.get("sync", {}), "capture.sync")
+        required_data = capture_data.get("required_streams", [])
+        if not isinstance(required_data, list):
+            raise ContractError("capture.required_streams must be an array")
         streams: dict[str, StreamSettings] = {}
         for stream_name, value in streams_data.items():
             stream = _object(value, f"streams.{stream_name}")
@@ -106,6 +134,19 @@ class CameraConfig:
                 warmup_frames=_integer(capture_data["warmup_frames"], "capture.warmup_frames"),
                 timeout_ms=_integer(capture_data["timeout_ms"], "capture.timeout_ms"),
                 copy_frames=_boolean(capture_data["copy_frames"], "capture.copy_frames"),
+                required_streams=tuple(
+                    _string(value, "capture.required_streams[]") for value in required_data
+                ),
+                sync=SyncSettings(
+                    max_comparable_stream_skew_ms=_number(
+                        sync_data.get("max_comparable_stream_skew_ms", 5.0),
+                        "capture.sync.max_comparable_stream_skew_ms",
+                    ),
+                    require_stereo_frame_number_match=_boolean(
+                        sync_data.get("require_stereo_frame_number_match", True),
+                        "capture.sync.require_stereo_frame_number_match",
+                    ),
+                ),
             ),
         )
 
@@ -134,3 +175,9 @@ def _boolean(value: object, name: str) -> bool:
     if not isinstance(value, bool):
         raise ContractError(f"{name} must be a boolean")
     return value
+
+
+def _number(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContractError(f"{name} must be a number")
+    return float(value)
