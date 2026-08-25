@@ -34,6 +34,7 @@ class RealSenseDriver:
         self._discovered: DiscoveredDevice | None = None
         self._pipeline: object | None = None
         self._active_profiles: tuple[StreamProfile, ...] = ()
+        self._pipeline_profile: object | None = None
         self._started = False
 
     @classmethod
@@ -47,6 +48,12 @@ class RealSenseDriver:
     @property
     def active_profiles(self) -> tuple[StreamProfile, ...]:
         return self._active_profiles
+
+    @property
+    def pipeline_profile(self) -> object:
+        if self._pipeline_profile is None or not self._started:
+            raise LifecycleError("RealSense active pipeline profile is unavailable")
+        return self._pipeline_profile
 
     def get_device_info(self) -> CameraDeviceInfo:
         return self._ensure_discovered().info
@@ -71,6 +78,7 @@ class RealSenseDriver:
             active = self.adapter.start(pipeline, sdk_config)
             self._pipeline = pipeline
             self._started = True
+            self._pipeline_profile = active
             self._active_profiles = self.adapter.active_profiles(active)
             validate_active(requested, self._active_profiles)
             for _ in range(self.config.capture.warmup_frames):
@@ -84,6 +92,7 @@ class RealSenseDriver:
             self._pipeline = None
             self._started = False
             self._active_profiles = ()
+            self._pipeline_profile = None
             raise _mapped_error(error) from error
 
     def wait_for_frames(self) -> object:
@@ -109,6 +118,7 @@ class RealSenseDriver:
             self._pipeline = None
             self._started = False
             self._active_profiles = ()
+            self._pipeline_profile = None
         self._state = CameraLifecycleState.CLOSED
 
     def __enter__(self) -> RealSenseDriver:

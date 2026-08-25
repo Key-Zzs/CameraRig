@@ -4,10 +4,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from camera_rig.config.loader import load_config
 from camera_rig.core.errors import (
+    ContractError,
     DeviceMismatchError,
     DeviceNotFoundError,
     LifecycleError,
@@ -20,10 +22,12 @@ from camera_rig.drivers.base import CameraLifecycleState
 from camera_rig.drivers.profiles import (
     canonical_d435i,
     requested_profiles,
+    validate_active,
     validate_supported,
 )
 from camera_rig.drivers.realsense.discovery import discover, list_devices
 from camera_rig.drivers.realsense.driver import RealSenseDriver
+from camera_rig.drivers.realsense.factory_calibration import extract_factory_calibration
 from camera_rig.drivers.realsense.sdk_adapter import RealSenseSDKAdapter
 from camera_rig.drivers.registry import create_driver
 
@@ -47,6 +51,9 @@ class FakeAdapter:
         self.wait_calls = 0
         self.fail_start = False
         self.fail_wait = False
+        self.depth_scale_value = 0.001
+        self.distortion_model = "brown_conrady"
+        self.fail_depth_scale = False
 
     def query_devices(self) -> tuple[object, ...]:
         return tuple(self.devices)
@@ -79,6 +86,32 @@ class FakeAdapter:
     def active_profiles(self, pipeline_profile: object) -> tuple[StreamProfile, ...]:
         assert isinstance(pipeline_profile, tuple)
         return pipeline_profile
+
+    def active_profile_handles(self, pipeline_profile: object) -> dict[str, object]:
+        return {profile.stream_name: profile.stream_name for profile in self.configured_profiles}
+
+    def intrinsics_data(self, profile: object) -> dict[str, object]:
+        return {
+            "width": 640,
+            "height": 480,
+            "fx": 600.0,
+            "fy": 601.0,
+            "cx": 319.5,
+            "cy": 239.5,
+            "distortion_model": self.distortion_model,
+            "distortion_coeffs": (0.1, -0.01, 0.0, 0.0, 0.0),
+        }
+
+    def extrinsics_data(
+        self, source: object, target: object
+    ) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        return tuple(rotation.flatten(order="F")), (0.05, 0.0, 0.0)
+
+    def depth_scale(self, pipeline_profile: object) -> float:
+        if self.fail_depth_scale:
+            raise RuntimeError("depth sensor unavailable")
+        return self.depth_scale_value
 
     def wait_for_frames(self, pipeline: object, timeout_ms: int) -> object:
         self.wait_calls += 1
@@ -169,6 +202,13 @@ def test_unsupported_profile_fails() -> None:
         validate_supported(_profiles(), supported)
 
 
+def test_active_profile_substitution_fails() -> None:
+    active = list(_profiles())
+    active[0] = replace(active[0], fps=15)
+    with pytest.raises(ProfileNotSupportedError, match="differs from request"):
+        validate_active(_profiles(), tuple(active))
+
+
 def test_lifecycle_open_warmup_close_and_reopen() -> None:
     adapter = FakeAdapter()
     driver = RealSenseDriver(CONFIG, adapter)
@@ -208,6 +248,54 @@ def test_context_manager_cleans_up_after_exception() -> None:
     with pytest.raises(RuntimeError, match="body"), RealSenseDriver(CONFIG, adapter):
         raise RuntimeError("body")
     assert adapter.stop_calls == 1
+
+
+def test_factory_calibration_uses_active_handles_and_column_major_rotation() -> None:
+    adapter = FakeAdapter()
+    with RealSenseDriver(CONFIG, adapter) as driver:
+        calibration = extract_factory_calibration(driver)
+    assert set(calibration.intrinsics) == {"color", "depth", "ir_left", "ir_right"}
+    assert calibration.intrinsics["color"].frame == "head/color_optical"
+    assert calibration.depth_scale_m_per_unit == 0.001
+    transforms = {value.target_frame: value for value in calibration.internal_transforms}
+    color = transforms["head/color_optical"]
+    assert color.source_frame == "head/ir_left_optical"
+    np.testing.assert_allclose(
+        color.matrix[:3, :3],
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+    )
+    np.testing.assert_allclose(color.inverse().matrix @ color.matrix, np.eye(4))
+
+
+@pytest.mark.parametrize("depth_scale", [0.0, -0.001, float("nan")])
+def test_factory_calibration_rejects_invalid_depth_scale(depth_scale: float) -> None:
+    adapter = FakeAdapter()
+    adapter.depth_scale_value = depth_scale
+    with (
+        RealSenseDriver(CONFIG, adapter) as driver,
+        pytest.raises(ContractError, match="depth scale"),
+    ):
+        extract_factory_calibration(driver)
+
+
+def test_factory_calibration_maps_missing_depth_sensor() -> None:
+    adapter = FakeAdapter()
+    adapter.fail_depth_scale = True
+    with (
+        RealSenseDriver(CONFIG, adapter) as driver,
+        pytest.raises(ContractError, match="depth sensor unavailable"),
+    ):
+        extract_factory_calibration(driver)
+
+
+def test_factory_calibration_rejects_unknown_distortion() -> None:
+    adapter = FakeAdapter()
+    adapter.distortion_model = "future_model"
+    with (
+        RealSenseDriver(CONFIG, adapter) as driver,
+        pytest.raises(ContractError, match="distortion model"),
+    ):
+        extract_factory_calibration(driver)
 
 
 def test_missing_optional_dependency_is_clear(monkeypatch: pytest.MonkeyPatch) -> None:

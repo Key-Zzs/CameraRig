@@ -38,6 +38,16 @@ class SDKAdapter(Protocol):
 
     def active_profiles(self, pipeline_profile: object) -> tuple[StreamProfile, ...]: ...
 
+    def active_profile_handles(self, pipeline_profile: object) -> dict[str, object]: ...
+
+    def intrinsics_data(self, profile: object) -> dict[str, object]: ...
+
+    def extrinsics_data(
+        self, source: object, target: object
+    ) -> tuple[tuple[float, ...], tuple[float, ...]]: ...
+
+    def depth_scale(self, pipeline_profile: object) -> float: ...
+
     def wait_for_frames(self, pipeline: object, timeout_ms: int) -> object: ...
 
     def stop(self, pipeline: object) -> None: ...
@@ -147,6 +157,43 @@ class RealSenseSDKAdapter:
             if converted is not None:
                 result.append(converted)
         return tuple(result)
+
+    def active_profile_handles(self, pipeline_profile: object) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for profile in pipeline_profile.get_streams():  # type: ignore[attr-defined]
+            sdk_stream = _enum_suffix(profile.stream_type())
+            index = int(profile.stream_index())
+            stream_name = _stream_name(sdk_stream, index)
+            if stream_name is not None:
+                result[stream_name] = profile
+        return result
+
+    def intrinsics_data(self, profile: object) -> dict[str, object]:
+        video = profile.as_video_stream_profile()  # type: ignore[attr-defined]
+        value = video.get_intrinsics()
+        return {
+            "width": int(value.width),
+            "height": int(value.height),
+            "fx": float(value.fx),
+            "fy": float(value.fy),
+            "cx": float(value.ppx),
+            "cy": float(value.ppy),
+            "distortion_model": _enum_suffix(value.model),
+            "distortion_coeffs": tuple(float(item) for item in value.coeffs),
+        }
+
+    def extrinsics_data(
+        self, source: object, target: object
+    ) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        value = source.get_extrinsics_to(target)  # type: ignore[attr-defined]
+        return (
+            tuple(float(item) for item in value.rotation),
+            tuple(float(item) for item in value.translation),
+        )
+
+    def depth_scale(self, pipeline_profile: object) -> float:
+        device = pipeline_profile.get_device()  # type: ignore[attr-defined]
+        return float(device.first_depth_sensor().get_depth_scale())
 
     def wait_for_frames(self, pipeline: object, timeout_ms: int) -> object:
         return pipeline.wait_for_frames(timeout_ms)  # type: ignore[attr-defined]
