@@ -25,6 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+realsense = [
+  "pyrealsense2==2.58.3.10794",
+]
 dev = [
   "build>=1.2",
   "mypy>=1.10",

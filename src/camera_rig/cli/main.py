@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from camera_rig.artifacts.validation import load_and_validate_bundle
+from camera_rig.cli.commands.device import add_device_commands
 from camera_rig.config.loader import load_config
 from camera_rig.core.errors import CameraRigError
 from camera_rig.version import __version__
@@ -22,6 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--debug", action="store_true", help="show tracebacks for expected errors")
     commands = parser.add_subparsers(dest="command")
+
+    add_device_commands(commands)
 
     config_parser = commands.add_parser("config", help="configuration operations")
     config_commands = config_parser.add_subparsers(dest="config_command", required=True)

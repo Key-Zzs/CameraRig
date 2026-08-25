@@ -9,7 +9,6 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 
 def test_source_has_no_forbidden_implementation_dependencies() -> None:
     forbidden = (
-        "pyrealsense2",
         "cv2.aruco",
         "PointCloudBuilder",
         "FFS",
@@ -19,6 +18,12 @@ def test_source_has_no_forbidden_implementation_dependencies() -> None:
         content = path.read_text(encoding="utf-8")
         for token in forbidden:
             assert token not in content, f"forbidden implementation token {token!r} in {path}"
+
+
+def test_realsense_extension_is_isolated_from_core() -> None:
+    for directory in ("core", "config", "artifacts", "targets", "calibration"):
+        for path in (REPOSITORY_ROOT / "src/camera_rig" / directory).rglob("*.py"):
+            assert "pyrealsense2" not in path.read_text(encoding="utf-8")
 
 
 def test_configuration_uses_singular_camera_root() -> None:
