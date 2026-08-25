@@ -73,7 +73,7 @@ print(camera_rig.__version__)
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "0.2.0"
+    assert result.stdout.strip() == "0.3.0"
 
 
 def test_replay_import_does_not_request_hardware_or_preview_packages() -> None:

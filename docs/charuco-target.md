@@ -56,4 +56,7 @@ camera-rig target validate-artifact \
 
 Reports persist complete `TargetObservation` records, aggregate 2D detection quality,
 and static-board temporal pixel jitter. Overlays are diagnostics only and never feed
-the detector or later calibration.
+the detector or later calibration. Capture acceptance uses a 5% median coverage floor,
+matching the detector's per-frame floor. Coverage remains the convex-hull area of the
+detected ChArUco corners divided by the full image area; the acceptance report records
+the applied threshold alongside every check.

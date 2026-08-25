@@ -19,6 +19,14 @@ from camera_rig.targets.observation import TargetObservation
 from camera_rig.targets.registry import registry
 from camera_rig.version import __version__
 
+_MINIMUM_CAPTURE_FRAMES = 60
+_MINIMUM_SUCCESS_RATIO = 0.95
+_MINIMUM_MEDIAN_CORNERS = 20.0
+_MINIMUM_MEDIAN_CORNER_FRACTION = 0.80
+_MINIMUM_MEDIAN_COVERAGE_RATIO = 0.05
+_MAXIMUM_MEDIAN_JITTER_PX = 0.5
+_MAXIMUM_P95_JITTER_PX = 1.0
+
 
 def detect_image(
     *,
@@ -196,15 +204,37 @@ def _acceptance(aggregate: dict[str, object], frame_count: int) -> dict[str, obj
     coverage = _mapping(aggregate["coverage_ratio"])
     jitter = _mapping(aggregate["temporal_jitter"])
     checks = {
-        "frame_count_is_60": frame_count == 60,
-        "success_ratio_at_least_0_95": _number(aggregate["success_ratio"]) >= 0.95,
-        "median_corners_at_least_20": _number(corners["median"]) >= 20.0,
-        "median_corner_fraction_at_least_0_80": _number(fractions["median"]) >= 0.80,
-        "median_coverage_at_least_0_08": _number(coverage["median"]) >= 0.08,
-        "median_jitter_at_most_0_5_px": _number(jitter["median_radial_std_px"]) <= 0.5,
-        "p95_jitter_at_most_1_0_px": _number(jitter["p95_radial_std_px"]) <= 1.0,
+        "frame_count_is_60": frame_count == _MINIMUM_CAPTURE_FRAMES,
+        "success_ratio_at_least_0_95": (
+            _number(aggregate["success_ratio"]) >= _MINIMUM_SUCCESS_RATIO
+        ),
+        "median_corners_at_least_20": (_number(corners["median"]) >= _MINIMUM_MEDIAN_CORNERS),
+        "median_corner_fraction_at_least_0_80": (
+            _number(fractions["median"]) >= _MINIMUM_MEDIAN_CORNER_FRACTION
+        ),
+        "median_coverage_at_least_0_05": (
+            _number(coverage["median"]) >= _MINIMUM_MEDIAN_COVERAGE_RATIO
+        ),
+        "median_jitter_at_most_0_5_px": (
+            _number(jitter["median_radial_std_px"]) <= _MAXIMUM_MEDIAN_JITTER_PX
+        ),
+        "p95_jitter_at_most_1_0_px": (
+            _number(jitter["p95_radial_std_px"]) <= _MAXIMUM_P95_JITTER_PX
+        ),
     }
-    return {"passed": all(checks.values()), "checks": checks}
+    return {
+        "passed": all(checks.values()),
+        "thresholds": {
+            "frame_count": _MINIMUM_CAPTURE_FRAMES,
+            "success_ratio": _MINIMUM_SUCCESS_RATIO,
+            "median_charuco_corners": _MINIMUM_MEDIAN_CORNERS,
+            "median_corner_fraction": _MINIMUM_MEDIAN_CORNER_FRACTION,
+            "median_coverage_ratio": _MINIMUM_MEDIAN_COVERAGE_RATIO,
+            "median_jitter_px": _MAXIMUM_MEDIAN_JITTER_PX,
+            "p95_jitter_px": _MAXIMUM_P95_JITTER_PX,
+        },
+        "checks": checks,
+    }
 
 
 def _selected_frames(observations: list[TargetObservation]) -> dict[str, int]:

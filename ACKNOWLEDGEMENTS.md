@@ -5,4 +5,6 @@ broader Python packaging, testing, linting, and type-checking communities listed
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The optional D435i acquisition path uses Intel's librealsense Python bindings. Preview
-generation uses Pillow; raw capture and replay remain NumPy-based.
+generation uses Pillow; raw capture and replay remain NumPy-based. The optional ChArUco
+workflow uses OpenCV's ArUco module for board generation and detection and ReportLab for
+the deterministic printable PDF.

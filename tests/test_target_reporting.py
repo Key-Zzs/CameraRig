@@ -171,6 +171,8 @@ def test_capture_report_persists_observations_and_temporal_jitter(
     assert jitter["median_radial_std_px"] == pytest.approx(0.0)
     assert jitter["p95_radial_std_px"] == pytest.approx(0.0)
     assert report["acceptance"]["passed"] is False  # type: ignore[index]
+    assert report["acceptance"]["thresholds"]["median_coverage_ratio"] == 0.05  # type: ignore[index]
+    assert report["acceptance"]["checks"]["median_coverage_at_least_0_05"] is True  # type: ignore[index]
     assert len(list(overlays.glob("*.png"))) == 3
     for item in report["per_frame"]:  # type: ignore[union-attr]
         observation = TargetObservation.from_dict(item["observation"])

@@ -28,6 +28,12 @@ python -m pip install -e ".[dev]"
 python -m pip install -e ".[dev,realsense,viz]"
 ```
 
+如需生成和检测 ChArUco 标定板，请安装对应可选依赖：
+
+```bash
+python -m pip install -e ".[charuco]"
+```
+
 物理设备序列号应只保存在私有且被忽略的配置中。公开示例刻意使用
 `REPLACE_WITH_DEVICE_SERIAL` 占位符。
 
@@ -74,6 +80,29 @@ camera-rig capture snapshot \
   --output .local/artifacts/sequence
 camera-rig replay validate --artifact .local/artifacts/sequence
 ```
+
+生成标准可打印 ChArUco 板、检测单张图像，或验证 snapshot 产物中的全部彩色帧：
+
+```bash
+camera-rig target generate \
+  --config configs/targets/charuco_a4_v1.yaml \
+  --output .local/targets/charuco_a4_v1
+camera-rig target detect \
+  --target .local/targets/charuco_a4_v1/target_spec.json \
+  --image image.png \
+  --output .local/reports/detection.json \
+  --overlay .local/overlays/detection.png
+camera-rig target validate-artifact \
+  --target .local/targets/charuco_a4_v1/target_spec.json \
+  --artifact .local/artifacts/sequence \
+  --stream color \
+  --report .local/reports/target-validation.json \
+  --overlays .local/overlays/target-validation
+```
+
+`TargetDetector` 是硬件无关的插件契约。ChArUco 实现返回图像点、稳定 point ID、持久化的
+目标板 canonical 点和二维质量指标，不估计目标位姿或相机外参。打印和验证细节见
+[docs/charuco-target.md](docs/charuco-target.md)。
 
 配置根节点使用单数 `camera`。未知字段、复数 `cameras` 根节点、未知数据流、非法尺寸或帧率以及
 非字符串序列号都会被拒绝，不会被静默转换。
