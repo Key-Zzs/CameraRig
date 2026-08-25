@@ -73,6 +73,11 @@ class CameraFrame:
         return self._stream("color")
 
     @property
+    def color(self) -> StreamFrame | None:
+        """Return the RGB color stream, or ``None`` when it is absent."""
+        return self._stream("color")
+
+    @property
     def depth(self) -> StreamFrame | None:
         """Return the depth stream, or ``None`` when it is absent."""
         return self._stream("depth")

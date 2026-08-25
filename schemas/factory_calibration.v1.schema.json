@@ -1,56 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://key-zzs.github.io/CameraRig/schemas/camera_bundle.v1.schema.json",
-  "title": "CameraRig CameraBundle v1",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/factory_calibration.v1.schema.json",
+  "title": "CameraRig factory calibration v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "status",
-    "bundle_id",
     "created_at",
-    "coordinate_convention",
     "device",
-    "stream_profiles",
+    "active_stream_profiles",
     "intrinsics",
     "internal_transforms",
     "depth_scale_m_per_unit",
-    "fixed_mount_calibration",
     "quality",
     "provenance"
   ],
   "properties": {
-    "schema_version": {"const": "camera-rig.bundle.v1"},
-    "status": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-    "bundle_id": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-    "created_at": {"type": "string", "minLength": 1},
-    "coordinate_convention": {
-      "const": {
-        "vector": "column",
-        "handedness": "right-handed",
-        "length_unit": "meter",
-        "time_unit": "nanosecond",
-        "transform_naming": "T_target_from_source"
-      }
-    },
+    "schema_version": {"const": "camera-rig.factory-calibration.v1"},
+    "created_at": {"type": "string", "format": "date-time"},
     "device": {"$ref": "#/$defs/device"},
-    "stream_profiles": {
+    "active_stream_profiles": {
       "type": "object",
-      "minProperties": 1,
-      "additionalProperties": {"$ref": "#/$defs/stream_profile"}
+      "additionalProperties": {"$ref": "#/$defs/stream_profile"},
+      "minProperties": 1
     },
     "intrinsics": {
       "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/intrinsics"}
+      "additionalProperties": {"$ref": "#/$defs/intrinsics"},
+      "minProperties": 1
     },
     "internal_transforms": {
       "type": "array",
       "items": {"$ref": "#/$defs/rigid_transform"}
     },
     "depth_scale_m_per_unit": {"type": "number", "exclusiveMinimum": 0},
-    "fixed_mount_calibration": {
-      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/fixed_mount"}]
-    },
     "quality": {"$ref": "#/$defs/quality"},
     "provenance": {"type": "object"}
   },
@@ -74,11 +57,11 @@
         "metadata"
       ],
       "properties": {
-        "driver": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "camera_name": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "expected_model": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "reported_model": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "serial": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "driver": {"type": "string", "minLength": 1},
+        "camera_name": {"type": "string", "minLength": 1},
+        "expected_model": {"type": "string", "minLength": 1},
+        "reported_model": {"type": "string", "minLength": 1},
+        "serial": {"type": "string", "minLength": 1},
         "canonical_model": {"type": ["string", "null"]},
         "product_id": {"type": ["string", "null"]},
         "product_line": {"type": ["string", "null"]},
@@ -102,11 +85,11 @@
         "sensor_identifier"
       ],
       "properties": {
-        "stream_name": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "stream_name": {"enum": ["color", "depth", "ir_left", "ir_right"]},
         "width": {"type": "integer", "minimum": 1},
         "height": {"type": "integer", "minimum": 1},
         "fps": {"type": "integer", "minimum": 1},
-        "format": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "format": {"type": "string", "minLength": 1},
         "index": {"type": ["integer", "null"], "minimum": 0},
         "sensor_identifier": {"type": ["string", "null"]}
       }
@@ -126,14 +109,14 @@
         "distortion_coeffs"
       ],
       "properties": {
-        "frame": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "frame": {"type": "string", "minLength": 1},
         "width": {"type": "integer", "minimum": 1},
         "height": {"type": "integer", "minimum": 1},
         "fx": {"type": "number", "exclusiveMinimum": 0},
         "fy": {"type": "number", "exclusiveMinimum": 0},
         "cx": {"type": "number", "minimum": 0},
         "cy": {"type": "number", "minimum": 0},
-        "distortion_model": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "distortion_model": {"type": "string", "minLength": 1},
         "distortion_coeffs": {"type": "array", "items": {"type": "number"}}
       }
     },
@@ -142,8 +125,8 @@
       "additionalProperties": false,
       "required": ["source_frame", "target_frame", "matrix"],
       "properties": {
-        "source_frame": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "target_frame": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "source_frame": {"type": "string", "minLength": 1},
+        "target_frame": {"type": "string", "minLength": 1},
         "matrix": {
           "type": "array",
           "minItems": 4,
@@ -162,35 +145,11 @@
       "additionalProperties": false,
       "required": ["passed", "metrics", "thresholds", "warnings", "failure_reasons"],
       "properties": {
-        "passed": {"type": "boolean"},
+        "passed": {"const": true},
         "metrics": {"type": "object"},
         "thresholds": {"type": "object"},
         "warnings": {"type": "array", "items": {"type": "string"}},
-        "failure_reasons": {"type": "array", "items": {"type": "string"}}
-      }
-    },
-    "fixed_mount": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "mount_type",
-        "parent_frame",
-        "camera_reference_frame",
-        "T_parent_from_camera_reference",
-        "quality",
-        "provenance"
-      ],
-      "properties": {
-        "mount_type": {"const": "fixed"},
-        "parent_frame": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
-        "camera_reference_frame": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": ".*\\S.*"
-        },
-        "T_parent_from_camera_reference": {"$ref": "#/$defs/rigid_transform"},
-        "quality": {"$ref": "#/$defs/quality"},
-        "provenance": {"type": "object"}
+        "failure_reasons": {"type": "array", "maxItems": 0}
       }
     }
   }

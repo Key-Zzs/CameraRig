@@ -1,11 +1,11 @@
-# Contract example only. R1 does not connect to or control a real D435i.
+# Public contract example. Replace the serial in a private local configuration.
 schema_version: camera-rig.config.v1
 
 camera:
   name: head
   driver: realsense
   expected_model: D435i
-  serial: "344522070241"
+  serial: "REPLACE_WITH_DEVICE_SERIAL"
   output_reference_stream: ir_left
 
 streams:

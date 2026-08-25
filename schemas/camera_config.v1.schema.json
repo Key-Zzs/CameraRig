@@ -39,7 +39,20 @@
       "properties": {
         "warmup_frames": {"type": "integer", "minimum": 0},
         "timeout_ms": {"type": "integer", "minimum": 1},
-        "copy_frames": {"type": "boolean"}
+        "copy_frames": {"type": "boolean"},
+        "required_streams": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["color", "depth", "ir_left", "ir_right"]}
+        },
+        "sync": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_comparable_stream_skew_ms": {"type": "number", "minimum": 0},
+            "require_stereo_frame_number_match": {"type": "boolean"}
+          }
+        }
       }
     }
   },

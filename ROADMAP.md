@@ -15,19 +15,28 @@ target plugin interface, and JSON artifact foundation without connecting to hard
 Add explicit RealSense device selection, model and serial verification, and single-device
 lifecycle management.
 
+Status: implemented and validated on a physical D435i.
+
 ## R3 RealSense Factory Calibration Export
 
 Read and export factory intrinsics, depth scale, and transforms between streams inside a
 single device.
+
+Status: implemented and validated against active profiles on a physical D435i.
 
 ## R4 Single-Camera Raw Capture & Internal Stream Validation
 
 Capture raw RGB, depth, and IR streams from one physical camera and validate device-local
 timestamp and frame relationships.
 
+Status: implemented and validated with repeated 60-frame and 300-frame physical capture.
+
 ## R5 Snapshot / Artifact / Replay
 
 Persist validated single-camera snapshots and replay them without camera hardware.
+
+Status: implemented; physical snapshots, checksum validation, and SDK-independent replay
+have been validated.
 
 ## R6 TargetDetector + ChArUco
 

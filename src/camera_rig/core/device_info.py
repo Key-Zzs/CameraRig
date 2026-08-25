@@ -25,6 +25,10 @@ class CameraDeviceInfo:
     expected_model: str
     reported_model: str
     serial: str
+    canonical_model: str | None = None
+    product_id: str | None = None
+    product_line: str | None = None
+    physical_port: str | None = None
     firmware_version: str | None = None
     sdk_version: str | None = None
     usb_type: str | None = None
@@ -33,7 +37,15 @@ class CameraDeviceInfo:
     def __post_init__(self) -> None:
         for name in ("driver", "camera_name", "expected_model", "reported_model", "serial"):
             require_non_empty(getattr(self, name), name)
-        for name in ("firmware_version", "sdk_version", "usb_type"):
+        for name in (
+            "canonical_model",
+            "product_id",
+            "product_line",
+            "physical_port",
+            "firmware_version",
+            "sdk_version",
+            "usb_type",
+        ):
             value = getattr(self, name)
             if value is not None:
                 require_non_empty(value, name)
@@ -47,6 +59,10 @@ class CameraDeviceInfo:
             "expected_model": self.expected_model,
             "reported_model": self.reported_model,
             "serial": self.serial,
+            "canonical_model": self.canonical_model,
+            "product_id": self.product_id,
+            "product_line": self.product_line,
+            "physical_port": self.physical_port,
             "firmware_version": self.firmware_version,
             "sdk_version": self.sdk_version,
             "usb_type": self.usb_type,
@@ -62,6 +78,10 @@ class CameraDeviceInfo:
             expected_model=decoded_string(data["expected_model"], "expected_model"),
             reported_model=decoded_string(data["reported_model"], "reported_model"),
             serial=decoded_string(data["serial"], "serial"),
+            canonical_model=decoded_optional_string(data.get("canonical_model"), "canonical_model"),
+            product_id=decoded_optional_string(data.get("product_id"), "product_id"),
+            product_line=decoded_optional_string(data.get("product_line"), "product_line"),
+            physical_port=decoded_optional_string(data.get("physical_port"), "physical_port"),
             firmware_version=decoded_optional_string(
                 data.get("firmware_version"), "firmware_version"
             ),
