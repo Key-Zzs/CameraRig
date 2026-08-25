@@ -25,6 +25,15 @@ CameraRig requires Python 3.10 or newer.
 python -m pip install -e ".[dev]"
 ```
 
+Install the official RealSense wheel and PNG preview support for D435i acquisition:
+
+```bash
+python -m pip install -e ".[dev,realsense,viz]"
+```
+
+Keep the physical device serial in a private, ignored configuration. The public example
+uses `REPLACE_WITH_DEVICE_SERIAL` deliberately.
+
 ## Command line
 
 ```bash
@@ -39,10 +48,35 @@ Validate the included strict, single-camera contract example:
 camera-rig config validate --config configs/examples/single_camera_contract.yaml
 ```
 
-Validate a versioned synthetic or future camera bundle:
+Validate a versioned camera bundle:
 
 ```bash
 camera-rig artifact validate --bundle path/to/camera_bundle.json
+```
+
+Discover and inspect a D435i without changing device options:
+
+```bash
+camera-rig device list --driver realsense
+camera-rig device inspect --config .local/configs/d435i.yaml --show-profiles
+camera-rig device smoke --config .local/configs/d435i.yaml --cycles 5 \
+  --report .local/reports/device-smoke.json
+```
+
+Export calibration from the profiles actually activated by the pipeline, then capture,
+validate, persist, and replay raw streams:
+
+```bash
+camera-rig calibration factory export \
+  --config .local/configs/d435i.yaml \
+  --output .local/artifacts/factory_calibration.json
+camera-rig capture validate-streams \
+  --config .local/configs/d435i.yaml --frames 300 \
+  --report .local/reports/stream-validation.json
+camera-rig capture snapshot \
+  --config .local/configs/d435i.yaml --frames 30 \
+  --output .local/artifacts/sequence
+camera-rig replay validate --artifact .local/artifacts/sequence
 ```
 
 Configuration uses a singular `camera` root. Unknown fields, a plural `cameras` root,
@@ -53,8 +87,17 @@ rejected instead of coerced.
 
 ```python
 import camera_rig
+from camera_rig.capture import CameraSession, ReplayCameraSession
+from camera_rig.config import load_config
 
 print(camera_rig.__version__)
+
+config = load_config("private-d435i.yaml")
+with CameraSession.from_config(config) as camera:
+    frame = camera.capture()
+
+with ReplayCameraSession.from_artifact("capture-artifact") as replay:
+    restored = replay.capture()
 ```
 
 Hardware-independent contracts are available from `camera_rig.core`, target plugin
@@ -68,6 +111,28 @@ contain device identity, stream profiles, per-stream intrinsics, internal optica
 transforms, depth scale, an optional fixed-mount calibration, quality results, and
 provenance. JSON writing is deterministic and atomic; persisted transforms are
 revalidated when loaded.
+
+A capture artifact stores raw `uint8` RGB, raw `uint16` depth, both raw `uint8` infrared
+streams, per-stream timing metadata, a factory-calibration artifact, and SHA-256 hashes.
+All manifest paths are artifact-relative. PNG files are derived diagnostics only; replay
+loads NPZ arrays and reconstructs the original `CameraFrame` contract after validating
+the complete artifact. Replay does not import or require the RealSense SDK.
+
+```text
+capture-artifact/
+├── manifest.json
+├── factory_calibration.json
+├── checksums.sha256
+├── frames/
+│   ├── frame_000000.npz
+│   └── frame_000000.meta.json
+└── previews/
+    ├── frame_000000_color.png
+    ├── frame_000000_depth.png
+    ├── frame_000000_ir_left.png
+    ├── frame_000000_ir_right.png
+    └── mosaic.png
+```
 
 ## Coordinate conventions
 

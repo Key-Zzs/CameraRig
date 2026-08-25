@@ -10,7 +10,7 @@ from camera_rig.cli.main import main
 
 
 def test_package_exposes_version() -> None:
-    assert camera_rig.__version__ == "0.1.0"
+    assert camera_rig.__version__ == "0.2.0"
 
 
 def test_cli_help() -> None:
@@ -35,3 +35,16 @@ def test_readmes_do_not_contain_progress_sections() -> None:
     for filename in ("README.md", "README_zh-CN.md"):
         content = (repository_root / filename).read_text(encoding="utf-8")
         assert forbidden_heading.search(content) is None
+        for token in (
+            "R2",
+            "R3",
+            "R4",
+            "R5",
+            "阶段",
+            "当前进度",
+            "未来计划",
+            "Roadmap",
+            "Milestone",
+            "TODO",
+        ):
+            assert token.casefold() not in content.casefold()

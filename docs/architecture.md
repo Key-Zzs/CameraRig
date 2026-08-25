@@ -6,7 +6,7 @@ CameraRig is a single-physical-camera acquisition, calibration-parameter managem
 validation, and replay toolkit for robotics. One `CameraSession` or `CameraDriver`
 instance corresponds to exactly one physical camera.
 
-The eventual library boundary includes discovery and lifecycle for that device; RGB,
+The library boundary includes discovery and lifecycle for that device; RGB,
 depth, IR, and other streams within the device; device-local timing; SDK factory
 intrinsics; transforms between the device's optical or stream frames; a single
 camera's fixed-mount extrinsic; calibration quality validation; and capture/replay
@@ -16,20 +16,19 @@ CameraRig never owns multi-camera arrays, groups, or synchronization; calibratio
 between physical cameras; robot forward kinematics; point-cloud construction; FFS;
 DepthAnything; mapping; fusion; or TSDF reconstruction.
 
-The package currently provides hardware-independent data, configuration, transform,
-quality, target-plugin, and artifact contracts. Hardware adapters are intentionally
-absent.
+The optional RealSense adapter is isolated behind an injectable SDK boundary. Core data,
+configuration, artifact, and replay imports remain hardware-independent.
 
 ## Contract flow
 
 ```text
-Camera SDK (future)
+RealSense SDK adapter
       ↓
 CameraDriver
       ↓
-CameraFrame + FactoryCalibration
+CameraSession → CameraFrame + FactoryCalibration
       ↓
-fixed-camera calibration (future)
+snapshot artifact → SDK-independent replay
       ↓
 CameraBundle
       ↓
@@ -46,8 +45,8 @@ calls raise `FeatureNotAvailableError`; they do not return placeholders.
 ## Dependency direction
 
 Downstream consumers may read CameraRig artifacts. CameraRig must not import or depend
-on such consumers. Hardware SDKs, when introduced behind driver boundaries, must not
-be required to import the core package.
+on such consumers. The optional hardware SDK is loaded lazily and is not required to
+import the core package or replay artifacts.
 
 ## Coordinate contract
 

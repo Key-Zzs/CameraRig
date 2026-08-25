@@ -28,7 +28,7 @@ def _write_yaml(tmp_path: Path, value: object) -> Path:
 
 def test_valid_yaml() -> None:
     config = load_config(EXAMPLE)
-    assert config.camera.serial == "344522070241"
+    assert config.camera.serial == "REPLACE_WITH_DEVICE_SERIAL"
     assert config.camera.output_reference_stream == "ir_left"
     assert set(config.streams) == {"color", "depth", "ir_left", "ir_right"}
     assert config.capture.sync.max_comparable_stream_skew_ms == 5.0

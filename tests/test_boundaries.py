@@ -57,4 +57,30 @@ print(camera_rig.__version__)
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "0.1.0"
+    assert result.stdout.strip() == "0.2.0"
+
+
+def test_replay_import_does_not_request_hardware_or_preview_packages() -> None:
+    script = """
+import importlib.abc
+import sys
+
+class Blocker(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'pyrealsense2', 'PIL', 'cv2'}:
+            raise RuntimeError(f'forbidden replay import: {fullname}')
+        return None
+
+sys.meta_path.insert(0, Blocker())
+from camera_rig.capture.replay import ReplayCameraSession
+print(ReplayCameraSession.__name__)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ReplayCameraSession"

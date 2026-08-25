@@ -63,3 +63,7 @@ class LifecycleError(CameraRigError):
 
 class FrameTimeoutError(CameraRigError):
     """A frame did not arrive within the configured timeout."""
+
+
+class ReplayEOFError(CameraRigError):
+    """Replay capture was requested after the final stored frame."""

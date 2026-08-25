@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
+from camera_rig.capture.replay import ReplayCameraSession
 from camera_rig.capture.session import CameraSession
+from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.config.loader import load_config
+from camera_rig.core.quality import QualityReport
 from camera_rig.drivers.realsense.driver import RealSenseDriver
 from camera_rig.drivers.realsense.factory_calibration import extract_factory_calibration
+
+ROOT = Path(__file__).parents[1]
 
 
 def _hardware_config() -> Path:
@@ -68,3 +75,41 @@ def test_d435i_raw_capture_buffer_ownership_and_reopen() -> None:
         assert first.sync_report is not None
     with CameraSession.from_config(config) as camera:
         assert camera.capture().color is not None
+
+
+@pytest.mark.hardware
+def test_d435i_live_snapshot_replay_bitwise_equality() -> None:
+    config = load_config(_hardware_config())
+    with CameraSession.from_config(config) as camera:
+        calibration = extract_factory_calibration(camera.driver)
+        live = camera.capture()
+    factory = FactoryCalibrationArtifact(
+        datetime.now(timezone.utc).isoformat(),
+        calibration,
+        QualityReport(True),
+        {"source": "hardware-test"},
+    )
+    artifact = ROOT / ".local/tmp/hardware-live-replay"
+    write_snapshot(
+        artifact,
+        [live],
+        factory,
+        {"copy_frames": True},
+        {"source": "hardware-test"},
+        include_previews=False,
+        force=True,
+    )
+    with ReplayCameraSession.from_artifact(artifact) as replay:
+        restored = replay.capture()
+    assert live.sync_report == restored.sync_report
+    for name in live.streams:
+        expected = live.streams[name]
+        actual = restored.streams[name]
+        np.testing.assert_array_equal(expected.data, actual.data)
+        assert expected.data.dtype == actual.data.dtype
+        assert expected.data.shape == actual.data.shape
+        assert expected.frame_number == actual.frame_number
+        assert expected.sensor_timestamp_ns == actual.sensor_timestamp_ns
+        assert expected.timestamp_domain == actual.timestamp_domain
+        assert expected.original_timestamp == actual.original_timestamp
+        assert expected.metadata == actual.metadata
