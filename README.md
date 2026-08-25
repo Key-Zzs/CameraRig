@@ -33,6 +33,22 @@ camera-rig --version
 python -m camera_rig --help
 ```
 
+Validate the included strict, single-camera contract example:
+
+```bash
+camera-rig config validate --config configs/examples/single_camera_contract.yaml
+```
+
+Validate a versioned synthetic or future camera bundle:
+
+```bash
+camera-rig artifact validate --bundle path/to/camera_bundle.json
+```
+
+Configuration uses a singular `camera` root. Unknown fields, a plural `cameras` root,
+unknown streams, invalid dimensions or frame rates, and non-string serial numbers are
+rejected instead of coerced.
+
 ## Python API
 
 ```python
@@ -40,6 +56,18 @@ import camera_rig
 
 print(camera_rig.__version__)
 ```
+
+Hardware-independent contracts are available from `camera_rig.core`, target plugin
+interfaces from `camera_rig.targets`, and deterministic artifact helpers from
+`camera_rig.artifacts`. Importing these modules does not require RealSense or OpenCV.
+
+## Artifacts
+
+`CameraBundle` is the versioned top-level JSON contract for one physical camera. It can
+contain device identity, stream profiles, per-stream intrinsics, internal optical-frame
+transforms, depth scale, an optional fixed-mount calibration, quality results, and
+provenance. JSON writing is deterministic and atomic; persisted transforms are
+revalidated when loaded.
 
 ## Coordinate conventions
 

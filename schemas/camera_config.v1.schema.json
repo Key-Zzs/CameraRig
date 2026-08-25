@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/camera_config.v1.schema.json",
+  "title": "CameraRig single-camera configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "camera", "streams", "capture"],
+  "properties": {
+    "schema_version": {"const": "camera-rig.config.v1"},
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "driver", "expected_model", "serial", "output_reference_stream"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "driver": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "expected_model": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "serial": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+        "output_reference_stream": {
+          "enum": ["color", "depth", "ir_left", "ir_right"]
+        }
+      }
+    },
+    "streams": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "color": {"$ref": "#/$defs/stream"},
+        "depth": {"$ref": "#/$defs/stream"},
+        "ir_left": {"$ref": "#/$defs/stream"},
+        "ir_right": {"$ref": "#/$defs/stream"}
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warmup_frames", "timeout_ms", "copy_frames"],
+      "properties": {
+        "warmup_frames": {"type": "integer", "minimum": 0},
+        "timeout_ms": {"type": "integer", "minimum": 1},
+        "copy_frames": {"type": "boolean"}
+      }
+    }
+  },
+  "$defs": {
+    "stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "width", "height", "fps", "format"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "fps": {"type": "integer", "minimum": 1},
+        "format": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
+      }
+    }
+  }
+}

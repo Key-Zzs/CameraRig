@@ -18,7 +18,11 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+  "jsonschema>=4.22,<5",
+  "numpy>=1.26,<2.4",
+  "PyYAML>=6.0,<7",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -28,6 +32,8 @@ dev = [
   "pytest>=8.2",
   "pytest-cov>=5.0",
   "ruff>=0.5",
+  "types-PyYAML>=6.0",
+  "types-jsonschema>=4.22",
 ]
 
 [project.scripts]
@@ -39,6 +45,9 @@ Issues = "https://github.com/Key-Zzs/CameraRig/issues"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.data-files]
+"share/camera-rig/schemas" = ["schemas/*.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

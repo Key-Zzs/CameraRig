@@ -1,0 +1,40 @@
+# Contract example only. R1 does not connect to or control a real D435i.
+schema_version: camera-rig.config.v1
+
+camera:
+  name: head
+  driver: realsense
+  expected_model: D435i
+  serial: "344522070241"
+  output_reference_stream: ir_left
+
+streams:
+  color:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: rgb8
+  depth:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: z16
+  ir_left:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: y8
+  ir_right:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: y8
+
+capture:
+  warmup_frames: 30
+  timeout_ms: 1500
+  copy_frames: true

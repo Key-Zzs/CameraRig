@@ -1,6 +1,10 @@
 # Third-Party Notices
 
-CameraRig's repository-bootstrap code has no runtime third-party dependencies.
+CameraRig uses these runtime dependencies under their respective licenses:
+
+- NumPy
+- PyYAML
+- jsonschema
 
 Development and verification use the following separately licensed tools:
 
@@ -9,6 +13,7 @@ Development and verification use the following separately licensed tools:
 - pre-commit
 - pytest and pytest-cov
 - Ruff
+- types-PyYAML
 
 Their licenses and source distributions are available from their respective projects.
 Installing CameraRig does not alter the terms of those projects.

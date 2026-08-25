@@ -30,6 +30,21 @@ camera-rig --version
 python -m camera_rig --help
 ```
 
+验证仓库内严格的单相机契约示例：
+
+```bash
+camera-rig config validate --config configs/examples/single_camera_contract.yaml
+```
+
+验证带版本的 synthetic 或后续相机 bundle：
+
+```bash
+camera-rig artifact validate --bundle path/to/camera_bundle.json
+```
+
+配置根节点使用单数 `camera`。未知字段、复数 `cameras` 根节点、未知数据流、非法尺寸或帧率以及
+非字符串序列号都会被拒绝，不会被静默转换。
+
 ## Python API
 
 ```python
@@ -37,6 +52,15 @@ import camera_rig
 
 print(camera_rig.__version__)
 ```
+
+硬件无关契约位于 `camera_rig.core`，目标插件接口位于 `camera_rig.targets`，确定性产物工具位于
+`camera_rig.artifacts`。导入这些模块不需要 RealSense 或 OpenCV。
+
+## 产物
+
+`CameraBundle` 是面向一个物理相机的带版本顶层 JSON 契约，可包含设备身份、数据流配置、各流
+内参、设备内部光学坐标变换、深度比例、可选固定安装标定、质量结果和来源信息。JSON 写入具有
+确定性和原子性，读取持久化变换时会重新验证。
 
 ## 坐标约定
 

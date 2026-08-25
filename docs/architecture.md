@@ -16,8 +16,32 @@ CameraRig never owns multi-camera arrays, groups, or synchronization; calibratio
 between physical cameras; robot forward kinematics; point-cloud construction; FFS;
 DepthAnything; mapping; fusion; or TSDF reconstruction.
 
-The package currently provides only installable project infrastructure. Hardware
-adapters are intentionally absent.
+The package currently provides hardware-independent data, configuration, transform,
+quality, target-plugin, and artifact contracts. Hardware adapters are intentionally
+absent.
+
+## Contract flow
+
+```text
+Camera SDK (future)
+      ↓
+CameraDriver
+      ↓
+CameraFrame + FactoryCalibration
+      ↓
+fixed-camera calibration (future)
+      ↓
+CameraBundle
+      ↓
+consumer such as PointCloudBuilder
+```
+
+The final arrow is a consumer relationship only. CameraRig does not implement or import
+the consumer.
+
+`TargetDetector` is a plugin protocol. No target detector is registered or implemented
+in the core package. Moving-camera calibration modules are reserved interfaces whose
+calls raise `FeatureNotAvailableError`; they do not return placeholders.
 
 ## Dependency direction
 
@@ -33,3 +57,7 @@ nanoseconds. Rigid transforms use homogeneous 4 x 4 SE(3) matrices named
 must explicitly name `source_frame` and `target_frame`; ambiguous names such as `T_ab`,
 `extrinsics`, `pose_matrix`, and `camera_transform` are not standalone transform
 contracts.
+
+Strict configuration uses a singular `camera` root. The schema rejects `cameras`,
+unknown fields, unsupported mount types, and any configuration for unavailable
+calibration operations.

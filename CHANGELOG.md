@@ -10,3 +10,5 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Repository bootstrap with src-layout packaging, CLI, documentation, tests, and CI.
+- Hardware-independent single-camera contracts, strict YAML configuration, versioned
+  CameraBundle serialization, atomic JSON I/O, hashing, and explicit reserved interfaces.
