@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use CameraRig, please cite the software using this metadata."
+title: "CameraRig"
+type: software
+version: 0.1.0
+date-released: 2026-08-25
+authors:
+  - name: "Key-Zzs"
+repository-code: "https://github.com/Key-Zzs/CameraRig"
+license: Apache-2.0
