@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_calibration.v1.schema.json",
+  "title": "CameraRig fixed-camera calibration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "created_at", "workspace", "camera", "target", "inputs", "solver", "per_frame_pose_summary", "aggregate", "T_detection_from_target", "T_workspace_from_detection", "T_detection_from_reference", "T_workspace_from_reference", "fixed_mount_calibration", "quality", "provenance"],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-calibration.v1"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "workspace": {
+      "type": "object", "additionalProperties": false,
+      "required": ["frame", "target_frame", "T_workspace_from_target"],
+      "properties": {"frame": {"type": "string", "minLength": 1}, "target_frame": {"type": "string", "minLength": 1}, "T_workspace_from_target": {"$ref": "#/$defs/transform"}}
+    },
+    "camera": {
+      "type": "object", "additionalProperties": false,
+      "required": ["detection_stream", "detection_frame", "reference_stream", "reference_frame"],
+      "properties": {"detection_stream": {"type": "string", "minLength": 1}, "detection_frame": {"type": "string", "minLength": 1}, "reference_stream": {"type": "string", "minLength": 1}, "reference_frame": {"type": "string", "minLength": 1}}
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target_spec_sha256", "print_provenance"],
+      "properties": {
+        "target_spec_sha256": {"$ref": "#/$defs/digest"},
+        "print_provenance": {
+          "type": "object", "additionalProperties": false,
+          "required": ["horizontal_print_scale", "vertical_print_scale", "maximum_observed_print_scale_error", "geometry_policy"],
+          "properties": {"horizontal_print_scale": {"type": "number"}, "vertical_print_scale": {"type": "number"}, "maximum_observed_print_scale_error": {"type": "number"}, "geometry_policy": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capture_manifest_sha256", "factory_calibration_sha256", "target_detection_sha256"],
+      "properties": {"capture_manifest_sha256": {"$ref": "#/$defs/digest"}, "factory_calibration_sha256": {"$ref": "#/$defs/digest"}, "target_detection_sha256": {"$ref": "#/$defs/digest"}}
+    },
+    "solver": {"type": "object", "additionalProperties": true, "required": ["method", "refinement", "thresholds"], "properties": {"method": {"const": "ippe"}, "refinement": {"const": "lm"}, "thresholds": {"type": "object"}, "camera_model": {"type": "object"}}},
+    "per_frame_pose_summary": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": true, "required": ["frame_index", "corner_count", "accepted", "failure_reasons"], "properties": {"frame_index": {"type": "integer", "minimum": 0}, "corner_count": {"type": "integer", "minimum": 0}, "accepted": {"type": "boolean"}, "failure_reasons": {"type": "array", "items": {"type": "string"}}}}},
+    "aggregate": {"type": "object", "additionalProperties": true, "required": ["accepted_frames", "accepted_ratio", "reprojection", "pose_repeatability", "split_half", "native_depth_sanity"], "properties": {"accepted_frames": {"type": "integer", "minimum": 0}, "accepted_ratio": {"type": "number", "minimum": 0, "maximum": 1}, "reprojection": {"type": "object"}, "pose_repeatability": {"type": "object"}, "split_half": {"type": "object"}, "native_depth_sanity": {"type": "object"}}},
+    "T_detection_from_target": {"$ref": "#/$defs/transform"},
+    "T_workspace_from_detection": {"$ref": "#/$defs/transform"},
+    "T_detection_from_reference": {"$ref": "#/$defs/transform"},
+    "T_workspace_from_reference": {"$ref": "#/$defs/transform"},
+    "fixed_mount_calibration": {"type": "object"},
+    "quality": {"$ref": "#/$defs/quality"},
+    "provenance": {"type": "object"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "matrix": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}}},
+    "transform": {"type": "object", "additionalProperties": false, "required": ["source_frame", "target_frame", "matrix"], "properties": {"source_frame": {"type": "string", "minLength": 1}, "target_frame": {"type": "string", "minLength": 1}, "matrix": {"$ref": "#/$defs/matrix"}}},
+    "quality": {"type": "object", "additionalProperties": false, "required": ["passed", "metrics", "thresholds", "warnings", "failure_reasons"], "properties": {"passed": {"type": "boolean"}, "metrics": {"type": "object"}, "thresholds": {"type": "object"}, "warnings": {"type": "array", "items": {"type": "string"}}, "failure_reasons": {"type": "array", "items": {"type": "string"}}}}
+  }
+}

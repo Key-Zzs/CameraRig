@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_calibration_config.v1.schema.json",
+  "title": "CameraRig fixed-camera calibration configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workspace", "camera", "solver", "diagnostics"],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-calibration-config.v1"},
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "target_frame", "T_workspace_from_target"],
+      "properties": {
+        "frame": {"type": "string", "minLength": 1},
+        "target_frame": {"type": "string", "minLength": 1},
+        "T_workspace_from_target": {"$ref": "#/$defs/matrix_transform"}
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detection_stream", "reference_stream"],
+      "properties": {
+        "detection_stream": {"enum": ["color", "depth", "ir_left", "ir_right"]},
+        "reference_stream": {"enum": ["color", "depth", "ir_left", "ir_right"]}
+      }
+    },
+    "solver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "refinement", "minimum_corners_per_frame", "minimum_accepted_frames", "minimum_accepted_ratio", "maximum_frame_rmse_px", "maximum_frame_p95_px", "maximum_pose_translation_p95_mm", "maximum_pose_rotation_p95_deg", "maximum_split_translation_delta_mm", "maximum_split_rotation_delta_deg"],
+      "properties": {
+        "method": {"const": "ippe"},
+        "refinement": {"const": "lm"},
+        "minimum_corners_per_frame": {"type": "integer", "minimum": 4},
+        "minimum_accepted_frames": {"type": "integer", "minimum": 2},
+        "minimum_accepted_ratio": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "maximum_frame_rmse_px": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_frame_p95_px": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_pose_translation_p95_mm": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_pose_rotation_p95_deg": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_split_translation_delta_mm": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_split_rotation_delta_deg": {"type": "number", "exclusiveMinimum": 0},
+        "pose_outlier_translation_mm": {"type": "number", "exclusiveMinimum": 0, "default": 5.0},
+        "pose_outlier_rotation_deg": {"type": "number", "exclusiveMinimum": 0, "default": 0.5}
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["native_depth_check"],
+      "properties": {"native_depth_check": {"type": "boolean"}}
+    }
+  },
+  "$defs": {
+    "matrix_transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrix"],
+      "properties": {
+        "matrix": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {"type": "number"}
+          }
+        }
+      }
+    }
+  }
+}

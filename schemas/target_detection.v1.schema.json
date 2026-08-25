@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/target_detection.v1.schema.json",
+  "title": "CameraRig target detection artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_spec_sha256",
+    "frame_count",
+    "per_frame",
+    "aggregate",
+    "software"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.target-detection.v1"},
+    "target_spec_sha256": {"$ref": "#/$defs/sha256"},
+    "input_image_sha256": {"$ref": "#/$defs/sha256"},
+    "input_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_sha256", "stream"],
+      "properties": {
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "stream": {"enum": ["color", "depth", "ir_left", "ir_right"]}
+      }
+    },
+    "frame_count": {"type": "integer", "minimum": 1},
+    "per_frame": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/per_frame"}
+    },
+    "aggregate": {"$ref": "#/$defs/aggregate"},
+    "acceptance": {"$ref": "#/$defs/acceptance"},
+    "selected_overlays": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "best": {"type": "integer", "minimum": 0},
+        "median_quality": {"type": "integer", "minimum": 0},
+        "worst_accepted": {"type": "integer", "minimum": 0}
+      }
+    },
+    "software": {"$ref": "#/$defs/software"}
+  },
+  "oneOf": [
+    {
+      "required": ["input_image_sha256"],
+      "not": {
+        "anyOf": [
+          {"required": ["input_artifact"]},
+          {"required": ["acceptance"]},
+          {"required": ["selected_overlays"]}
+        ]
+      }
+    },
+    {
+      "required": ["input_artifact", "acceptance", "selected_overlays"],
+      "not": {"required": ["input_image_sha256"]}
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera_rig_version", "opencv_version"],
+      "properties": {
+        "camera_rig_version": {"type": "string", "minLength": 1},
+        "opencv_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "metrics", "thresholds", "warnings", "failure_reasons"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "metrics": {"type": "object"},
+        "thresholds": {"type": "object"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "failure_reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "point2": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "number"}
+    },
+    "point3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plugin_name",
+        "target_frame",
+        "point_ids",
+        "image_points_px",
+        "object_points_m",
+        "image_size",
+        "quality",
+        "metadata"
+      ],
+      "properties": {
+        "plugin_name": {"type": "string", "minLength": 1},
+        "target_frame": {"type": "string", "minLength": 1},
+        "point_ids": {
+          "type": "array",
+          "items": {"type": "integer"},
+          "uniqueItems": true
+        },
+        "image_points_px": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/point2"}
+        },
+        "object_points_m": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/point3"}
+        },
+        "image_size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "quality": {"$ref": "#/$defs/quality"},
+        "metadata": {"type": "object"}
+      }
+    },
+    "per_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame_index", "success", "observation"],
+      "properties": {
+        "frame_index": {"type": "integer", "minimum": 0},
+        "success": {"type": "boolean"},
+        "observation": {"$ref": "#/$defs/observation"},
+        "overlay": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "median", "maximum", "mean"],
+      "properties": {
+        "minimum": {"type": "number"},
+        "median": {"type": "number"},
+        "maximum": {"type": "number"},
+        "mean": {"type": "number"}
+      }
+    },
+    "corner_jitter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point_id", "occurrences", "std_u_px", "std_v_px", "radial_std_px"],
+      "properties": {
+        "point_id": {"type": "integer", "minimum": 0},
+        "occurrences": {"type": "integer", "minimum": 2},
+        "std_u_px": {"type": "number", "minimum": 0},
+        "std_v_px": {"type": "number", "minimum": 0},
+        "radial_std_px": {"type": "number", "minimum": 0}
+      }
+    },
+    "temporal_jitter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_occurrences",
+        "eligible_corner_count",
+        "median_radial_std_px",
+        "p95_radial_std_px",
+        "per_corner"
+      ],
+      "properties": {
+        "minimum_occurrences": {"type": "integer", "minimum": 2},
+        "eligible_corner_count": {"type": "integer", "minimum": 0},
+        "median_radial_std_px": {"type": "number", "minimum": 0},
+        "p95_radial_std_px": {"type": "number", "minimum": 0},
+        "per_corner": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/corner_jitter"}
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "success_ratio",
+        "detected_marker_count",
+        "detected_charuco_corner_count",
+        "corner_fraction",
+        "coverage_ratio",
+        "temporal_jitter"
+      ],
+      "properties": {
+        "success_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "detected_marker_count": {"$ref": "#/$defs/statistics"},
+        "detected_charuco_corner_count": {"$ref": "#/$defs/statistics"},
+        "corner_fraction": {"$ref": "#/$defs/statistics"},
+        "coverage_ratio": {"$ref": "#/$defs/statistics"},
+        "temporal_jitter": {"$ref": "#/$defs/temporal_jitter"}
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "thresholds", "checks"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frame_count",
+            "success_ratio",
+            "median_charuco_corners",
+            "median_corner_fraction",
+            "median_coverage_ratio",
+            "median_jitter_px",
+            "p95_jitter_px"
+          ],
+          "properties": {
+            "frame_count": {"type": "integer", "minimum": 1},
+            "success_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "median_charuco_corners": {"type": "number", "minimum": 0},
+            "median_corner_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+            "median_coverage_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "median_jitter_px": {"type": "number", "minimum": 0},
+            "p95_jitter_px": {"type": "number", "minimum": 0}
+          }
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frame_count_is_60",
+            "success_ratio_at_least_0_95",
+            "median_corners_at_least_20",
+            "median_corner_fraction_at_least_0_80",
+            "median_coverage_at_least_0_05",
+            "median_jitter_at_most_0_5_px",
+            "p95_jitter_at_most_1_0_px"
+          ],
+          "properties": {
+            "frame_count_is_60": {"type": "boolean"},
+            "success_ratio_at_least_0_95": {"type": "boolean"},
+            "median_corners_at_least_20": {"type": "boolean"},
+            "median_corner_fraction_at_least_0_80": {"type": "boolean"},
+            "median_coverage_at_least_0_05": {"type": "boolean"},
+            "median_jitter_at_most_0_5_px": {"type": "boolean"},
+            "p95_jitter_at_most_1_0_px": {"type": "boolean"}
+          }
+        }
+      }
+    }
+  }
+}

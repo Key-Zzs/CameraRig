@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
+from camera_rig.artifacts.target_detection import load_and_validate_target_detection
 from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.core.device_info import CameraDeviceInfo
 from camera_rig.core.factory_calibration import FactoryCalibration
@@ -137,6 +138,7 @@ def test_single_image_report_and_overlay_are_portable(
     assert report["schema_version"] == "camera-rig.target-detection.v1"
     assert report["aggregate"]["success_ratio"] == 1.0  # type: ignore[index]
     assert report_path.is_file() and overlay_path.is_file()
+    assert load_and_validate_target_detection(report_path).input_image_sha256 is not None
     persisted = report["per_frame"][0]["observation"]  # type: ignore[index]
     observation = TargetObservation.from_dict(persisted)
     assert observation.point_ids == tuple(range(24))
@@ -173,6 +175,10 @@ def test_capture_report_persists_observations_and_temporal_jitter(
     assert report["acceptance"]["passed"] is False  # type: ignore[index]
     assert report["acceptance"]["thresholds"]["median_coverage_ratio"] == 0.05  # type: ignore[index]
     assert report["acceptance"]["checks"]["median_coverage_at_least_0_05"] is True  # type: ignore[index]
+    restored = load_and_validate_target_detection(report_path)
+    assert restored.capture_manifest_sha256 is not None
+    assert restored.stream == "color"
+    assert restored.frame_count == 3
     assert len(list(overlays.glob("*.png"))) == 3
     for item in report["per_frame"]:  # type: ignore[union-attr]
         observation = TargetObservation.from_dict(item["observation"])
