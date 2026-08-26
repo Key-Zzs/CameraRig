@@ -50,7 +50,10 @@ from camera_rig.provision.acquisition import (
     acquire_fixed_provision_frames,
 )
 from camera_rig.provision.config import ProvisionConfig
-from camera_rig.targets.charuco.artifact import ResolvedCharucoTarget
+from camera_rig.targets.charuco.artifact import (
+    ResolvedCharucoTarget,
+    ResolvedCharucoTargetV2,
+)
 from camera_rig.targets.io import validate_target_artifact
 from camera_rig.targets.validation import validate_capture_artifact_target
 from camera_rig.version import __version__
@@ -77,6 +80,7 @@ class TargetDetectionRunner(Protocol):
         stream: str,
         report_path: Path,
         overlays_path: Path,
+        policy: str,
     ) -> TargetDetectionArtifact: ...
 
 
@@ -122,6 +126,15 @@ def run_fixed_provision_workflow(
     deps = dependencies or ProvisionWorkflowDependencies()
     acquisition_id = str(uuid.uuid4())
     staged_target_path, target = _stage_pinned_target(config, root)
+    existing_target_route = False
+    existing_measurement_sha256 = ""
+    if isinstance(target, ResolvedCharucoTargetV2) and target.source_type == "existing_physical":
+        existing_target_route = True
+        existing_measurement_sha256 = _artifact_digest(target.physical_measurement or {})
+    if existing_target_route and not config.fixed_calibration_config.native_depth_check:
+        raise ContractError(
+            "existing-target provisioning requires native_depth_check to be enabled"
+        )
 
     acquisition = acquire_fixed_provision_frames(
         config.camera_config,
@@ -194,14 +207,25 @@ def run_fixed_provision_workflow(
 
     detection_path = root / "target/detection_report.json"
     detection_overlays_root = root / "diagnostics/target_detection"
-    detector = deps.target_detection_runner or _default_target_detection_runner
-    detection = detector(
-        target_path=staged_target_path,
-        capture_path=capture_root,
-        stream=config.target.detection_stream,
-        report_path=detection_path,
-        overlays_path=detection_overlays_root,
-    )
+    if deps.target_detection_runner is None:
+        validate_capture_artifact_target(
+            target_path=staged_target_path,
+            artifact_path=capture_root,
+            stream=config.target.detection_stream,
+            report_path=detection_path,
+            overlays_path=detection_overlays_root,
+            policy=config.target.detection_policy,
+        )
+        detection = load_and_validate_target_detection(detection_path)
+    else:
+        detection = deps.target_detection_runner(
+            target_path=staged_target_path,
+            capture_path=capture_root,
+            stream=config.target.detection_stream,
+            report_path=detection_path,
+            overlays_path=detection_overlays_root,
+            policy=config.target.detection_policy,
+        )
     persisted_detection = load_and_validate_target_detection(detection_path)
     if persisted_detection.to_dict() != detection.to_dict():
         raise ArtifactError("target detector return value differs from persisted report")
@@ -212,6 +236,7 @@ def run_fixed_provision_workflow(
         capture_manifest_sha256=sha256_file(capture_manifest_path),
         expected_stream=config.target.detection_stream,
         expected_frame_count=config.acquisition.calibration_frames,
+        expected_policy=config.target.detection_policy,
     )
     detection_overlay_files = _validate_detection_overlays(detection, detection_overlays_root)
 
@@ -242,13 +267,30 @@ def run_fixed_provision_workflow(
         capture_manifest_sha256=sha256_file(capture_manifest_path),
         factory_calibration_sha256=factory_sha256,
         target_detection_sha256=sha256_file(detection_path),
-        print_provenance=print_provenance,
+        print_provenance=(
+            {
+                "source_type": "existing_physical",
+                "physical_measurement_sha256": existing_measurement_sha256,
+                "geometry_policy": (
+                    "existing physical target uses nominal user-provided and vision-verified "
+                    "measurements persisted in the resolved target artifact"
+                ),
+            }
+            if existing_target_route
+            else print_provenance
+        ),
         native_depth_evaluator=native_depth_evaluator,
         provenance={
             "camera_rig_version": __version__,
             "workflow": "fixed-provision",
         },
     )
+    if existing_target_route:
+        native_depth = fixed.aggregate.get("native_depth_sanity")
+        if not isinstance(native_depth, dict) or native_depth.get("status") != "PASS":
+            raise ContractError(
+                "existing-target provisioning requires native depth sanity status PASS"
+            )
     fixed_path = root / "calibration/fixed_calibration.json"
     if not fixed.quality.passed:
         failed_path = root / "calibration/fixed_calibration.failed.json"
@@ -422,6 +464,7 @@ def _validate_detection(
     capture_manifest_sha256: str,
     expected_stream: str,
     expected_frame_count: int,
+    expected_policy: str,
 ) -> None:
     if not detection.is_capture or detection.target_spec_sha256 != target.artifact_sha256:
         raise ContractError("target detection is bound to a different target artifact")
@@ -433,6 +476,8 @@ def _validate_detection(
         raise ContractError("target detection frame count differs from retained calibration frames")
     if detection.acceptance is None or detection.acceptance.get("passed") is not True:
         raise ContractError("R6 target-detection acceptance failed")
+    if detection.acceptance.get("policy") != expected_policy:
+        raise ContractError("target detection policy differs from the provision contract")
     for frame in detection.per_frame:
         if (
             frame.observation.plugin_name != target.plugin

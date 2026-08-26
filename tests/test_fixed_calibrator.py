@@ -18,7 +18,10 @@ from camera_rig.calibration.fixed.artifact import (
     load_and_validate_fixed_calibration,
     write_fixed_calibration,
 )
-from camera_rig.calibration.fixed.calibrator import FixedCameraCalibrator
+from camera_rig.calibration.fixed.calibrator import (
+    FixedCameraCalibrator,
+    _validated_print_provenance,
+)
 from camera_rig.calibration.fixed.config import (
     FixedCalibrationConfig,
     FixedSolverThresholds,
@@ -167,6 +170,22 @@ def _print_provenance() -> dict[str, object]:
         "maximum_observed_print_scale_error": 0.003,
         "geometry_policy": "pose uses nominal persisted target geometry",
     }
+
+
+def test_existing_target_print_provenance_records_measurement_identity_without_fake_scale() -> None:
+    value = {
+        "source_type": "existing_physical",
+        "physical_measurement_sha256": "d" * 64,
+        "geometry_policy": "nominal measured geometry from registered target artifact",
+    }
+    assert _validated_print_provenance(value) == value
+    with pytest.raises(ContractError, match="missing or unknown"):
+        _validated_print_provenance(
+            {
+                **value,
+                "horizontal_print_scale": 1.0,
+            }
+        )
 
 
 def _artifact_sha(value: object) -> str:

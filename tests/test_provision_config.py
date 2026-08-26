@@ -51,6 +51,7 @@ def test_example_composes_existing_contracts_and_resolves_target_relative_to_yam
     assert config.acquisition.stream_validation_frames == FIXED_PROVISION_STREAM_VALIDATION_FRAMES
     assert config.target.expected_sha256 == ACCEPTED_TARGET_SHA256
     assert config.target.artifact_reference == "../targets/charuco_a4_v1/target_spec.json"
+    assert config.target.detection_policy == "legacy_strict"
     assert (
         config.target.artifact_path
         == (EXAMPLE.parent / "../targets/charuco_a4_v1/target_spec.json").resolve()
@@ -116,6 +117,19 @@ def test_target_artifact_must_name_resolved_spec(tmp_path: Path) -> None:
     _mapping(data["target"])["artifact"] = "../targets/checksums.sha256"
     with pytest.raises(ConfigurationError, match=r"target_spec\.json"):
         load_provision_config(_write_yaml(tmp_path, data))
+
+
+def test_target_detection_policy_is_explicit_and_strict(tmp_path: Path) -> None:
+    data = _example_data()
+    _mapping(data["target"])["detection_policy"] = "pose_validated"
+    assert load_provision_config(_write_yaml(tmp_path, data)).target.detection_policy == (
+        "pose_validated"
+    )
+    _mapping(data["target"])["detection_policy"] = "guess"
+    invalid = tmp_path / "invalid"
+    invalid.mkdir()
+    with pytest.raises(SchemaValidationError, match=r"\$\.target\.detection_policy"):
+        load_provision_config(_write_yaml(invalid, data))
 
 
 def test_calibration_frame_policy_is_frozen_to_detection_contract(tmp_path: Path) -> None:

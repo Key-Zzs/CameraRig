@@ -614,19 +614,32 @@ def _validate_observation_geometry(target_detection: TargetDetectionArtifact) ->
 
 def _validated_print_provenance(value: Mapping[str, object]) -> dict[str, object]:
     result = dict(value)
-    expected = {
+    generated = {
         "horizontal_print_scale",
         "vertical_print_scale",
         "maximum_observed_print_scale_error",
         "geometry_policy",
     }
-    if set(result) != expected:
+    existing = {
+        "source_type",
+        "physical_measurement_sha256",
+        "geometry_policy",
+    }
+    if set(result) == existing:
+        if result["source_type"] != "existing_physical":
+            raise ContractError("existing-target print provenance source_type is invalid")
+        _require_digest(
+            result["physical_measurement_sha256"],
+            "print_provenance.physical_measurement_sha256",
+        )
+    elif set(result) == generated:
+        for name in generated - {"geometry_policy"}:
+            numeric = _number(result[name], f"print_provenance.{name}")
+            if numeric < 0:
+                raise ContractError(f"print_provenance.{name} must be non-negative")
+            result[name] = numeric
+    else:
         raise ContractError("print provenance has missing or unknown fields")
-    for name in expected - {"geometry_policy"}:
-        numeric = _number(result[name], f"print_provenance.{name}")
-        if numeric < 0:
-            raise ContractError(f"print_provenance.{name} must be non-negative")
-        result[name] = numeric
     policy = result["geometry_policy"]
     if not isinstance(policy, str) or not policy.strip():
         raise ContractError("print provenance geometry_policy must be non-empty")

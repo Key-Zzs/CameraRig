@@ -50,6 +50,7 @@ class ProvisionTargetSettings:
     artifact_path: Path
     expected_sha256: str
     detection_stream: str
+    detection_policy: str = "legacy_strict"
 
     def __post_init__(self) -> None:
         if self.artifact_path.name != "target_spec.json":
@@ -58,6 +59,8 @@ class ProvisionTargetSettings:
             character not in "0123456789abcdef" for character in self.expected_sha256
         ):
             raise ContractError("target.expected_sha256 must be a lowercase SHA-256 digest")
+        if self.detection_policy not in {"legacy_strict", "pose_validated"}:
+            raise ContractError("target.detection_policy is unsupported")
 
 
 @dataclass(frozen=True)
@@ -162,6 +165,10 @@ class ProvisionConfig:
                 artifact_path=(source_path.parent / target_reference).resolve(strict=False),
                 expected_sha256=_string(target["expected_sha256"], "target.expected_sha256"),
                 detection_stream=_string(target["detection_stream"], "target.detection_stream"),
+                detection_policy=_string(
+                    target.get("detection_policy", "legacy_strict"),
+                    "target.detection_policy",
+                ),
             ),
             source_path=source_path.resolve(strict=False),
         )

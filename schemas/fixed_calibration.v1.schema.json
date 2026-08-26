@@ -24,9 +24,18 @@
       "properties": {
         "target_spec_sha256": {"$ref": "#/$defs/digest"},
         "print_provenance": {
-          "type": "object", "additionalProperties": false,
-          "required": ["horizontal_print_scale", "vertical_print_scale", "maximum_observed_print_scale_error", "geometry_policy"],
-          "properties": {"horizontal_print_scale": {"type": "number"}, "vertical_print_scale": {"type": "number"}, "maximum_observed_print_scale_error": {"type": "number"}, "geometry_policy": {"type": "string", "minLength": 1}}
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["horizontal_print_scale", "vertical_print_scale", "maximum_observed_print_scale_error", "geometry_policy"],
+              "properties": {"horizontal_print_scale": {"type": "number"}, "vertical_print_scale": {"type": "number"}, "maximum_observed_print_scale_error": {"type": "number"}, "geometry_policy": {"type": "string", "minLength": 1}}
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["source_type", "physical_measurement_sha256", "geometry_policy"],
+              "properties": {"source_type": {"const": "existing_physical"}, "physical_measurement_sha256": {"$ref": "#/$defs/digest"}, "geometry_policy": {"type": "string", "minLength": 1}}
+            }
+          ]
         }
       }
     },

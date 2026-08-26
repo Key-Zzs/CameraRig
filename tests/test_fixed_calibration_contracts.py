@@ -25,6 +25,8 @@ from camera_rig.core.fixed_mount import FixedMountCalibration
 from camera_rig.core.quality import QualityReport
 from camera_rig.core.transforms import RigidTransform
 
+REPOSITORY_ROOT = Path(__file__).parents[1]
+
 
 def _pose(x_m: float) -> RigidTransform:
     matrix = np.eye(4)
@@ -34,7 +36,7 @@ def _pose(x_m: float) -> RigidTransform:
 
 
 def test_fixed_config_example_is_strict_and_identity_workspace() -> None:
-    config = load_fixed_config("configs/examples/fixed_calibration_contract.yaml")
+    config = load_fixed_config(REPOSITORY_ROOT / "configs/examples/fixed_calibration_contract.yaml")
     assert config.workspace_frame == "workspace"
     assert config.target_frame == "charuco_target"
     assert np.array_equal(config.T_workspace_from_target.matrix, np.eye(4))

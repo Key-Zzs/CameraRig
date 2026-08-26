@@ -59,6 +59,7 @@ def preflight_fixed_provision(
         "target_frame": target.target_frame,
         "workspace_frame": config.fixed_calibration_config.workspace_frame,
         "detection_stream": config.fixed_calibration_config.detection_stream,
+        "target_detection_policy": config.target.detection_policy,
         "reference_stream": config.fixed_calibration_config.reference_stream,
         "output_exists": destination.exists(),
         "force": force,

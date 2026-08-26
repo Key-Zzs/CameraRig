@@ -229,6 +229,7 @@ class _FakeDetector:
     mode: str = "success"
     call_count: int = 0
     target_path: Path | None = None
+    policy: str | None = None
 
     def __call__(
         self,
@@ -238,9 +239,11 @@ class _FakeDetector:
         stream: str,
         report_path: Path,
         overlays_path: Path,
+        policy: str,
     ) -> TargetDetectionArtifact:
         self.call_count += 1
         self.target_path = target_path
+        self.policy = policy
         target = load_target(target_path)
         target_sha = "e" * 64 if self.mode == "wrong_detection" else target.artifact_sha256
         point_count = 3 if self.mode == "pnp" else len(target.corner_points)
@@ -305,6 +308,7 @@ class _FakeDetector:
             },
             acceptance={
                 "passed": passed,
+                "policy": "pose_validated" if self.mode == "wrong_policy" else policy,
                 "thresholds": {
                     "frame_count": 60,
                     "success_ratio": 0.95,
@@ -408,6 +412,7 @@ def test_fixed_provision_workflow_uses_one_session_and_stages_modular_artifacts(
     [
         ("stream_quality", "raw stream validation failed", 0),
         ("wrong_detection", "different target artifact", 1),
+        ("wrong_policy", "policy differs", 1),
         ("r6_quality", "R6 target-detection acceptance failed", 1),
         ("pnp", "no frame passing the pose frame gates", 1),
         ("repeatability", "fixed calibration quality failed", 1),

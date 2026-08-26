@@ -49,6 +49,7 @@ target:
   # Accepted R6 resolved target artifact; do not silently regenerate or substitute it.
   expected_sha256: 56fbd157f9553e7e78c6868e86841c37d1799af1ca0be5a8cc69efa64b845ce1
   detection_stream: color
+  detection_policy: legacy_strict
 
 workspace:
   frame: workspace
