@@ -7,7 +7,10 @@ from pathlib import Path
 from camera_rig.artifacts.hashing import sha256_file
 from camera_rig.artifacts.io import load_json
 from camera_rig.core.errors import ArtifactError
-from camera_rig.targets.charuco.artifact import ResolvedCharucoTarget
+from camera_rig.targets.charuco.artifact import (
+    ResolvedCharucoTarget,
+    ResolvedCharucoTargetV2,
+)
 
 
 def load_target(path: str | Path) -> ResolvedCharucoTarget:
@@ -18,6 +21,10 @@ def load_target(path: str | Path) -> ResolvedCharucoTarget:
     schema_version = value.get("schema_version")
     if schema_version == "camera-rig.target.charuco-resolved.v1":
         return ResolvedCharucoTarget.from_dict(dict(value)).with_artifact_sha256(sha256_file(path))
+    if schema_version == "camera-rig.target.charuco-resolved.v2":
+        return ResolvedCharucoTargetV2.from_dict(dict(value)).with_artifact_sha256(
+            sha256_file(path)
+        )
     raise ArtifactError(f"unsupported resolved target schema: {schema_version!r}")
 
 
@@ -26,13 +33,22 @@ def validate_target_artifact(path: str | Path) -> ResolvedCharucoTarget:
     source = Path(path)
     target = load_target(source)
     root = source.parent
-    expected_payloads = {
-        f"{target.target_name}_board.png",
-        f"{target.target_name}_print.pdf",
-        f"{target.target_name}_preview.png",
-        "generation_report.json",
-        "target_spec.json",
-    }
+    if isinstance(target, ResolvedCharucoTargetV2):
+        if target.source_type == "existing_physical":
+            expected_payloads = {"registration_report.json", "target_spec.json"}
+        else:
+            expected_payloads = set((target.artifact_files or {}).values()) | {
+                "generation_report.json",
+                "target_spec.json",
+            }
+    else:
+        expected_payloads = {
+            f"{target.target_name}_board.png",
+            f"{target.target_name}_print.pdf",
+            f"{target.target_name}_preview.png",
+            "generation_report.json",
+            "target_spec.json",
+        }
     expected_files = expected_payloads | {"checksums.sha256"}
     actual_files: set[str] = set()
     for candidate in root.iterdir():
@@ -48,19 +64,51 @@ def validate_target_artifact(path: str | Path) -> ResolvedCharucoTarget:
     for name, digest in checksums.items():
         if sha256_file(root / name) != digest:
             raise ArtifactError(f"target artifact checksum mismatch: {name}")
-    if checksums[f"{target.target_name}_board.png"] != target.board_png_sha256:
-        raise ArtifactError("resolved target board PNG checksum is inconsistent")
-    if checksums[f"{target.target_name}_print.pdf"] != target.print_pdf_sha256:
-        raise ArtifactError("resolved target print PDF checksum is inconsistent")
-    report = load_json(root / "generation_report.json")
+    if not isinstance(target, ResolvedCharucoTargetV2) or target.source_type == "generated":
+        artifact_files = (
+            target.artifact_files if isinstance(target, ResolvedCharucoTargetV2) else {}
+        )
+        board_name = (artifact_files or {}).get("board_png", f"{target.target_name}_board.png")
+        print_name = (artifact_files or {}).get("print_pdf", f"{target.target_name}_print.pdf")
+        if checksums[board_name] != target.board_png_sha256:
+            raise ArtifactError("resolved target board PNG checksum is inconsistent")
+        if checksums[print_name] != target.print_pdf_sha256:
+            raise ArtifactError("resolved target print PDF checksum is inconsistent")
+    report_name = (
+        "registration_report.json"
+        if isinstance(target, ResolvedCharucoTargetV2) and target.source_type == "existing_physical"
+        else "generation_report.json"
+    )
+    report = load_json(root / report_name)
     if not isinstance(report, dict):
         raise ArtifactError("target generation report must be an object")
-    if (
-        report.get("status") != "PASS"
-        or report.get("target_spec_sha256") != target.artifact_sha256
-        or report.get("expected_charuco_corner_count") != len(target.corner_points)
-    ):
-        raise ArtifactError("target generation report is inconsistent with resolved target")
+    if report.get("status") != "PASS" or report.get("target_spec_sha256") != target.artifact_sha256:
+        raise ArtifactError("target report is inconsistent with resolved target")
+    if isinstance(target, ResolvedCharucoTargetV2) and target.source_type == "existing_physical":
+        identification = target.identification or {}
+        if (
+            set(report)
+            != {
+                "schema_version",
+                "status",
+                "source_type",
+                "target_name",
+                "target_spec_sha256",
+                "identification_report_sha256",
+                "generated_print_assets",
+            }
+            or report.get("schema_version") != "camera-rig.target-registration.v1"
+            or report.get("source_type") != "existing_physical"
+            or report.get("target_name") != target.target_name
+            or report.get("generated_print_assets") is not False
+            or report.get("identification_report_sha256")
+            != identification.get("identification_report_sha256")
+        ):
+            raise ArtifactError("existing-target registration provenance is inconsistent")
+    if report_name == "generation_report.json" and report.get(
+        "expected_charuco_corner_count"
+    ) != len(target.corner_points):
+        raise ArtifactError("target generation report has inconsistent corner count")
     return target
 
 

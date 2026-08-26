@@ -174,7 +174,7 @@ def test_capture_report_persists_observations_and_temporal_jitter(
     assert jitter["p95_radial_std_px"] == pytest.approx(0.0)
     assert report["acceptance"]["passed"] is False  # type: ignore[index]
     assert report["acceptance"]["thresholds"]["median_coverage_ratio"] == 0.05  # type: ignore[index]
-    assert report["acceptance"]["checks"]["median_coverage_at_least_0_05"] is True  # type: ignore[index]
+    assert report["acceptance"]["checks"]["median_coverage_at_least_threshold"] is True  # type: ignore[index]
     restored = load_and_validate_target_detection(report_path)
     assert restored.capture_manifest_sha256 is not None
     assert restored.stream == "color"

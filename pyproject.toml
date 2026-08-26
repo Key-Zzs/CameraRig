@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camera-rig"
-version = "1.0.0"
+version = "1.1.0.dev0"
 description = "Single-camera acquisition, calibration, validation, and replay contracts"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -65,9 +65,13 @@ package-dir = { "" = "src" }
 [tool.setuptools.data-files]
 "share/camera-rig" = ["API_STABILITY.md"]
 "share/camera-rig/schemas" = ["schemas/*.json"]
-"share/camera-rig/configs/examples" = ["configs/examples/fixed_provision_contract.yaml"]
+"share/camera-rig/configs/examples" = [
+  "configs/examples/charuco_custom_page_v2.yaml",
+  "configs/examples/fixed_provision_contract.yaml",
+]
 "share/camera-rig/docs" = [
   "docs/calibration-quality.md",
+  "docs/charuco-target.md",
   "docs/fixed-camera-calibration.md",
   "docs/fixed-camera-provisioning.md",
   "docs/downstream-integration.md",

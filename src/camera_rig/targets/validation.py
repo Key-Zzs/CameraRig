@@ -15,8 +15,11 @@ from camera_rig.artifacts.target_detection import (
 )
 from camera_rig.capture.replay import ReplayCameraSession
 from camera_rig.core.errors import ArtifactError
+from camera_rig.targets.base import TargetDetector
 from camera_rig.targets.charuco.dependencies import cv2_module
+from camera_rig.targets.charuco.detector import CharucoDetector
 from camera_rig.targets.charuco.overlay import write_overlay
+from camera_rig.targets.charuco.quality import CharucoQualityThresholds
 from camera_rig.targets.io import load_target
 from camera_rig.targets.observation import TargetObservation
 from camera_rig.targets.registry import registry
@@ -27,6 +30,9 @@ _MINIMUM_SUCCESS_RATIO = 0.95
 _MINIMUM_MEDIAN_CORNERS = 20.0
 _MINIMUM_MEDIAN_CORNER_FRACTION = 0.80
 _MINIMUM_MEDIAN_COVERAGE_RATIO = 0.05
+_POSE_MINIMUM_MEDIAN_CORNERS = 12.0
+_POSE_MINIMUM_MEDIAN_CORNER_FRACTION = 0.50
+_POSE_MINIMUM_MEDIAN_COVERAGE_RATIO = 0.01
 _MAXIMUM_MEDIAN_JITTER_PX = 0.5
 _MAXIMUM_P95_JITTER_PX = 1.0
 
@@ -76,10 +82,17 @@ def validate_capture_artifact_target(
     stream: str,
     report_path: str | Path,
     overlays_path: str | Path,
+    policy: str = "legacy_strict",
 ) -> dict[str, object]:
     """Replay a validated capture and report deterministic per-frame observations."""
     target = load_target(target_path)
-    detector = registry.create(plugin_name=target.plugin, target_spec=target)
+    detector: TargetDetector
+    if policy == "pose_validated":
+        detector = CharucoDetector(target, thresholds=CharucoQualityThresholds.pose_validated())
+    elif policy == "legacy_strict":
+        detector = registry.create(plugin_name=target.plugin, target_spec=target)
+    else:
+        raise ArtifactError(f"unsupported target-detection policy: {policy!r}")
     session = ReplayCameraSession.from_artifact(artifact_path)
     observations: list[TargetObservation] = []
     images: list[npt.NDArray[np.uint8]] = []
@@ -127,7 +140,7 @@ def validate_capture_artifact_target(
             for index, observation in enumerate(observations)
         ],
         "aggregate": aggregate,
-        "acceptance": _acceptance(aggregate, len(observations)),
+        "acceptance": _acceptance(aggregate, len(observations), policy=policy),
         "selected_overlays": selected,
         "software": {"camera_rig_version": __version__, "opencv_version": target.opencv_version},
     }
@@ -203,23 +216,36 @@ def _temporal_jitter(observations: list[TargetObservation]) -> dict[str, object]
     }
 
 
-def _acceptance(aggregate: dict[str, object], frame_count: int) -> dict[str, object]:
+def _acceptance(
+    aggregate: dict[str, object], frame_count: int, *, policy: str = "legacy_strict"
+) -> dict[str, object]:
     corners = _mapping(aggregate["detected_charuco_corner_count"])
     fractions = _mapping(aggregate["corner_fraction"])
     coverage = _mapping(aggregate["coverage_ratio"])
     jitter = _mapping(aggregate["temporal_jitter"])
+    minimum_corners = (
+        _POSE_MINIMUM_MEDIAN_CORNERS if policy == "pose_validated" else _MINIMUM_MEDIAN_CORNERS
+    )
+    minimum_fraction = (
+        _POSE_MINIMUM_MEDIAN_CORNER_FRACTION
+        if policy == "pose_validated"
+        else _MINIMUM_MEDIAN_CORNER_FRACTION
+    )
+    minimum_coverage = (
+        _POSE_MINIMUM_MEDIAN_COVERAGE_RATIO
+        if policy == "pose_validated"
+        else _MINIMUM_MEDIAN_COVERAGE_RATIO
+    )
     checks = {
         "frame_count_is_60": frame_count == _MINIMUM_CAPTURE_FRAMES,
         "success_ratio_at_least_0_95": (
             _number(aggregate["success_ratio"]) >= _MINIMUM_SUCCESS_RATIO
         ),
-        "median_corners_at_least_20": (_number(corners["median"]) >= _MINIMUM_MEDIAN_CORNERS),
-        "median_corner_fraction_at_least_0_80": (
-            _number(fractions["median"]) >= _MINIMUM_MEDIAN_CORNER_FRACTION
+        "median_corners_at_least_threshold": (_number(corners["median"]) >= minimum_corners),
+        "median_corner_fraction_at_least_threshold": (
+            _number(fractions["median"]) >= minimum_fraction
         ),
-        "median_coverage_at_least_0_05": (
-            _number(coverage["median"]) >= _MINIMUM_MEDIAN_COVERAGE_RATIO
-        ),
+        "median_coverage_at_least_threshold": (_number(coverage["median"]) >= minimum_coverage),
         "median_jitter_at_most_0_5_px": (
             _number(jitter["median_radial_std_px"]) <= _MAXIMUM_MEDIAN_JITTER_PX
         ),
@@ -227,18 +253,25 @@ def _acceptance(aggregate: dict[str, object], frame_count: int) -> dict[str, obj
             _number(jitter["p95_radial_std_px"]) <= _MAXIMUM_P95_JITTER_PX
         ),
     }
+    passed = all(checks.values())
     return {
-        "passed": all(checks.values()),
+        "passed": passed,
+        "policy": policy,
         "thresholds": {
             "frame_count": _MINIMUM_CAPTURE_FRAMES,
             "success_ratio": _MINIMUM_SUCCESS_RATIO,
-            "median_charuco_corners": _MINIMUM_MEDIAN_CORNERS,
-            "median_corner_fraction": _MINIMUM_MEDIAN_CORNER_FRACTION,
-            "median_coverage_ratio": _MINIMUM_MEDIAN_COVERAGE_RATIO,
+            "median_charuco_corners": minimum_corners,
+            "median_corner_fraction": minimum_fraction,
+            "median_coverage_ratio": minimum_coverage,
             "median_jitter_px": _MAXIMUM_MEDIAN_JITTER_PX,
             "p95_jitter_px": _MAXIMUM_P95_JITTER_PX,
         },
         "checks": checks,
+        "recommendations": {
+            "median_coverage_at_least_0_05": (
+                _number(coverage["median"]) >= _MINIMUM_MEDIAN_COVERAGE_RATIO
+            )
+        },
     }
 
 

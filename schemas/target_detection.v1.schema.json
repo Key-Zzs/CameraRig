@@ -218,6 +218,13 @@
       "required": ["passed", "thresholds", "checks"],
       "properties": {
         "passed": {"type": "boolean"},
+        "policy": {"enum": ["legacy_strict", "pose_validated"]},
+        "recommendations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["median_coverage_at_least_0_05"],
+          "properties": {"median_coverage_at_least_0_05": {"type": "boolean"}}
+        },
         "thresholds": {
           "type": "object",
           "additionalProperties": false,
@@ -243,14 +250,9 @@
         "checks": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "frame_count_is_60",
-            "success_ratio_at_least_0_95",
-            "median_corners_at_least_20",
-            "median_corner_fraction_at_least_0_80",
-            "median_coverage_at_least_0_05",
-            "median_jitter_at_most_0_5_px",
-            "p95_jitter_at_most_1_0_px"
+          "oneOf": [
+            {"required": ["frame_count_is_60", "success_ratio_at_least_0_95", "median_corners_at_least_20", "median_corner_fraction_at_least_0_80", "median_coverage_at_least_0_05", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px"]},
+            {"required": ["frame_count_is_60", "success_ratio_at_least_0_95", "median_corners_at_least_threshold", "median_corner_fraction_at_least_threshold", "median_coverage_at_least_threshold", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px"]}
           ],
           "properties": {
             "frame_count_is_60": {"type": "boolean"},
@@ -258,6 +260,9 @@
             "median_corners_at_least_20": {"type": "boolean"},
             "median_corner_fraction_at_least_0_80": {"type": "boolean"},
             "median_coverage_at_least_0_05": {"type": "boolean"},
+            "median_corners_at_least_threshold": {"type": "boolean"},
+            "median_corner_fraction_at_least_threshold": {"type": "boolean"},
+            "median_coverage_at_least_threshold": {"type": "boolean"},
             "median_jitter_at_most_0_5_px": {"type": "boolean"},
             "p95_jitter_at_most_1_0_px": {"type": "boolean"}
           }

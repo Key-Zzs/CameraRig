@@ -1,5 +1,72 @@
 # ChArUco target workflow
 
+CameraRig keeps the original A4 v1 route and adds two fail-closed deployment routes:
+
+- `camera-rig.target.charuco.v2` supports A4, A3, or custom pages, board-only output,
+  and a separate scale-check PDF;
+- `camera-rig.target.charuco-resolved.v2` supports generated targets and existing
+  physical boards without inventing printable source files.
+
+An existing board is never identified from dimensions alone. Scan every supported
+dictionary, both square orientations, both legacy modes, and border bits 1 and 2.
+Image-only scans are preliminary and can never authorize registration. Final
+identification requires consistent accepted frames from at least two distinct capture
+artifacts whose camera identities differ; only privacy-safe identity hashes are persisted:
+
+```bash
+camera-rig target identify-existing \
+  --artifact .local/captures/camera_a \
+  --artifact .local/captures/camera_b \
+  --board-width-mm 500 \
+  --board-height-mm 700 \
+  --square-length-mm 100 \
+  --marker-length-mm 75 \
+  --output .local/target/identification.json
+```
+
+Register only a report with one unique dictionary, orientation, legacy mode, border-bit
+setting, marker layout, and independently consistent multi-camera match. Registration
+recomputes every ranking and acceptance invariant instead of trusting editable conclusion
+fields:
+
+```bash
+camera-rig target register-existing \
+  --identification .local/target/identification.json \
+  --target-name charuco_existing_v1 \
+  --target-frame charuco_target \
+  --output .local/target/charuco_existing_v1
+```
+
+That artifact contains only `target_spec.json`, `registration_report.json`, and
+`checksums.sha256`. It retains evidence hashes but no source images and no fake print
+PDF. Ambiguous results preserve the complete ranking and return
+`PAUSED_FOR_USER_VALIDATION`; resolve them from the original PDF or generator metadata.
+Pass that local source with `--authoritative-source` plus the relevant
+`--authoritative-dictionary`, `--authoritative-legacy-pattern`,
+`--authoritative-border-bits`, or `--authoritative-orientation` constraints. The report
+stores only the source SHA-256, never its path or contents, and still requires every
+vision gate to pass before the authoritative constraint may break a tie.
+
+Run pose-free deployment preflight before fixed provisioning:
+
+```bash
+camera-rig target preflight \
+  --camera-config .local/configs/camera.yaml \
+  --target .local/target/charuco_existing_v1/target_spec.json \
+  --frames 60 \
+  --policy pose_validated \
+  --report .local/reports/target_preflight.json \
+  --overlays .local/overlays/target_preflight
+```
+
+`pose_validated` makes 5% coverage advisory while 1% absolute coverage, 12 corners,
+50% corner fraction, spans, and marker scale stay hard-gated. Final calibration still hard-gates
+cheirality, printed-face orientation, reprojection, pose repeatability, split-half
+stability, and native-depth sanity. `legacy_strict` retains the original 5% hard gate.
+The release CLI requires exactly 60 preflight frames. Fixed provisioning records the
+selected target detection policy explicitly in `target.detection_policy`; existing-board
+provisioning additionally requires native-depth sanity to finish with status `PASS`.
+
 Install the optional target dependencies:
 
 ```bash

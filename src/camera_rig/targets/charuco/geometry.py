@@ -38,18 +38,30 @@ def create_board(spec: CharucoTargetSpec | Any) -> tuple[Any, Any, Any]:
         raise ConfigurationError(f"unsupported ChArUco dictionary: {spec.dictionary!r}")
     dictionary_id = getattr(cv2.aruco, spec.dictionary)
     dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
-    board = cv2.aruco.CharucoBoard(
+    marker_ids_value = getattr(spec, "marker_ids", None)
+    marker_ids = (
+        np.asarray(marker_ids_value, dtype=np.int32) if marker_ids_value is not None else None
+    )
+    arguments = (
         (spec.squares_x, spec.squares_y),
         spec.square_length_m,
         spec.marker_length_m,
         dictionary,
     )
+    board = (
+        cv2.aruco.CharucoBoard(*arguments, marker_ids)
+        if marker_ids is not None
+        else cv2.aruco.CharucoBoard(*arguments)
+    )
     board.setLegacyPattern(spec.legacy_pattern)
+    actual_ids = tuple(int(value) for value in np.asarray(board.getIds()).reshape(-1))
+    if marker_ids_value is not None and actual_ids != tuple(marker_ids_value):
+        raise ArtifactError("OpenCV did not preserve the persisted marker layout order")
     return board, dictionary, cv2
 
 
 def canonical_corners_from_board(
-    spec: CharucoTargetSpec, board: Any
+    spec: CharucoTargetSpec | Any, board: Any
 ) -> tuple[tuple[int, tuple[float, float, float]], ...]:
     """Convert OpenCV's top-left/down local geometry to CameraRig bottom-left/up."""
     local = np.asarray(board.getChessboardCorners(), dtype=np.float64)

@@ -50,7 +50,7 @@ def _target() -> ResolvedCharucoTarget:
         board_width_m=squares_x * square,
         board_height_m=height,
         corner_points=tuple(corners),
-        marker_ids=(),
+        marker_ids=tuple(range((squares_x * squares_y) // 2)),
         camera_rig_version="test",
         opencv_version="test",
         source_config_sha256="1" * 64,
