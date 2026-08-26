@@ -34,6 +34,12 @@ python -m pip install -e ".[dev,realsense,viz]"
 python -m pip install -e ".[charuco]"
 ```
 
+如需完整的固定相机一键配置运行环境：
+
+```bash
+python -m pip install -e ".[dev,provision]"
+```
+
 物理设备序列号应只保存在私有且被忽略的配置中。公开示例刻意使用
 `REPLACE_WITH_DEVICE_SERIAL` 占位符。
 
@@ -100,6 +106,27 @@ camera-rig target validate-artifact \
   --overlays .local/overlays/target-validation
 ```
 
+使用一个严格 YAML 配置固定 D435i；也可以先查看不会打开相机的完整执行计划：
+
+```bash
+camera-rig provision fixed \
+  --config .local/configs/fixed_provision.yaml \
+  --output .local/artifacts/fixed_camera \
+  --dry-run
+camera-rig provision fixed \
+  --config .local/configs/fixed_provision.yaml \
+  --output .local/artifacts/fixed_camera
+camera-rig provision validate \
+  --artifact .local/artifacts/fixed_camera
+```
+
+固定相机工作流把 `workspace` 明确定义为持久化的 ChArUco 目标板坐标系，并在验证通过的
+`CameraBundle` 中输出 `T_workspace_from_<camera>/ir_left_optical`。采集期间相机和目标板都保持
+固定；多帧用于衡量检测与位姿重复性，而不是重新标定内参。详见
+[固定相机外参](docs/fixed-camera-calibration.md)、
+[固定相机配置](docs/fixed-camera-provisioning.md) 与
+[标定质量](docs/calibration-quality.md)。
+
 `TargetDetector` 是硬件无关的插件契约。ChArUco 实现返回图像点、稳定 point ID、持久化的
 目标板 canonical 点和二维质量指标，不估计目标位姿或相机外参。打印和验证细节见
 [docs/charuco-target.md](docs/charuco-target.md)。
@@ -130,8 +157,8 @@ with ReplayCameraSession.from_artifact("capture-artifact") as replay:
 ## 产物
 
 `CameraBundle` 是面向一个物理相机的带版本顶层 JSON 契约，可包含设备身份、数据流配置、各流
-内参、设备内部光学坐标变换、深度比例、可选固定安装标定、质量结果和来源信息。JSON 写入具有
-确定性和原子性，读取持久化变换时会重新验证。
+内参、设备内部光学坐标变换、深度比例、可选的固定安装标定、质量结果和来源信息。固定相机一键配置
+始终填充并验证该安装记录。JSON 写入具有确定性和原子性，读取持久化变换时会重新验证。
 
 采集产物保存原始 `uint8` RGB、原始 `uint16` 深度、左右两路原始 `uint8` 红外、逐流时间
 元数据、原厂参数产物以及 SHA-256。manifest 中所有路径均相对产物根目录。PNG 仅用于诊断，

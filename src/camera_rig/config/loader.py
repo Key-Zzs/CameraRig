@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from camera_rig.artifacts.io import json_safe
+from camera_rig.artifacts.io import JsonValue, json_safe
 from camera_rig.config.models import CameraConfig
 from camera_rig.config.validation import validate_against_named_schema
 from camera_rig.core.errors import ArtifactError, ConfigurationError, ContractError
@@ -29,6 +29,11 @@ def load_config(path: str | Path) -> CameraConfig:
         raise ConfigurationError(
             f"configuration contains unsupported YAML values: {error}"
         ) from error
+    return validate_camera_config_data(value)
+
+
+def validate_camera_config_data(value: JsonValue) -> CameraConfig:
+    """Strictly validate and construct a camera config already decoded in memory."""
     validate_against_named_schema(value, "camera_config.v1.schema.json")
     if not isinstance(value, dict):
         raise ConfigurationError("configuration root must be a mapping")

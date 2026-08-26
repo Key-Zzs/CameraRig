@@ -1,0 +1,33 @@
+schema_version: camera-rig.fixed-calibration-config.v1
+
+workspace:
+  frame: workspace
+  target_frame: charuco_target
+  T_workspace_from_target:
+    matrix:
+      - [1.0, 0.0, 0.0, 0.0]
+      - [0.0, 1.0, 0.0, 0.0]
+      - [0.0, 0.0, 1.0, 0.0]
+      - [0.0, 0.0, 0.0, 1.0]
+
+camera:
+  detection_stream: color
+  reference_stream: ir_left
+
+solver:
+  method: ippe
+  refinement: lm
+  minimum_corners_per_frame: 12
+  minimum_accepted_frames: 50
+  minimum_accepted_ratio: 0.90
+  maximum_frame_rmse_px: 0.50
+  maximum_frame_p95_px: 1.00
+  maximum_pose_translation_p95_mm: 3.0
+  maximum_pose_rotation_p95_deg: 0.30
+  maximum_split_translation_delta_mm: 2.0
+  maximum_split_rotation_delta_deg: 0.20
+  pose_outlier_translation_mm: 5.0
+  pose_outlier_rotation_deg: 0.50
+
+diagnostics:
+  native_depth_check: true

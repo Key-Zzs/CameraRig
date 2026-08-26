@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_provision.v1.schema.json",
+  "title": "CameraRig fixed-camera provisioning configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "camera",
+    "streams",
+    "capture",
+    "provision",
+    "target",
+    "workspace",
+    "fixed_calibration"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-provision.v1"},
+    "camera": {
+      "$ref": "camera_config.v1.schema.json#/properties/camera"
+    },
+    "streams": {
+      "$ref": "camera_config.v1.schema.json#/properties/streams"
+    },
+    "capture": {
+      "$ref": "camera_config.v1.schema.json#/properties/capture"
+    },
+    "provision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream_validation_frames", "calibration_frames"],
+      "properties": {
+        "stream_validation_frames": {"type": "integer", "const": 300},
+        "calibration_frames": {"const": 60}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "expected_sha256", "detection_stream"],
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!file://)(?!.*\\\\).+\\S.*$"
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "detection_stream": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/camera/properties/detection_stream"
+        }
+      }
+    },
+    "workspace": {
+      "$ref": "fixed_calibration_config.v1.schema.json#/properties/workspace"
+    },
+    "fixed_calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_stream",
+        "method",
+        "refinement",
+        "minimum_corners_per_frame",
+        "minimum_accepted_frames",
+        "minimum_accepted_ratio",
+        "maximum_frame_rmse_px",
+        "maximum_frame_p95_px",
+        "maximum_pose_translation_p95_mm",
+        "maximum_pose_rotation_p95_deg",
+        "maximum_split_translation_delta_mm",
+        "maximum_split_rotation_delta_deg",
+        "native_depth_check"
+      ],
+      "properties": {
+        "reference_stream": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/camera/properties/reference_stream"
+        },
+        "method": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/method"
+        },
+        "refinement": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/refinement"
+        },
+        "minimum_corners_per_frame": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/minimum_corners_per_frame"
+        },
+        "minimum_accepted_frames": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/minimum_accepted_frames"
+        },
+        "minimum_accepted_ratio": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/minimum_accepted_ratio"
+        },
+        "maximum_frame_rmse_px": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_frame_rmse_px"
+        },
+        "maximum_frame_p95_px": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_frame_p95_px"
+        },
+        "maximum_pose_translation_p95_mm": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_pose_translation_p95_mm"
+        },
+        "maximum_pose_rotation_p95_deg": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_pose_rotation_p95_deg"
+        },
+        "maximum_split_translation_delta_mm": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_split_translation_delta_mm"
+        },
+        "maximum_split_rotation_delta_deg": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/maximum_split_rotation_delta_deg"
+        },
+        "pose_outlier_translation_mm": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/pose_outlier_translation_mm"
+        },
+        "pose_outlier_rotation_deg": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/solver/properties/pose_outlier_rotation_deg"
+        },
+        "native_depth_check": {
+          "$ref": "fixed_calibration_config.v1.schema.json#/properties/diagnostics/properties/native_depth_check"
+        }
+      }
+    }
+  }
+}

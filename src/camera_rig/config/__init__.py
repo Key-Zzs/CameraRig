@@ -1,6 +1,6 @@
 """Strict single-camera YAML configuration."""
 
-from camera_rig.config.loader import load_config
+from camera_rig.config.loader import load_config, validate_camera_config_data
 from camera_rig.config.models import (
     CONFIG_SCHEMA_VERSION,
     CameraConfig,
@@ -18,4 +18,5 @@ __all__ = [
     "StreamSettings",
     "SyncSettings",
     "load_config",
+    "validate_camera_config_data",
 ]

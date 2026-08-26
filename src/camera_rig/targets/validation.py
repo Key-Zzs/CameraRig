@@ -9,7 +9,10 @@ import numpy as np
 import numpy.typing as npt
 
 from camera_rig.artifacts.hashing import sha256_file
-from camera_rig.artifacts.io import atomic_write_json
+from camera_rig.artifacts.target_detection import (
+    TargetDetectionArtifact,
+    write_target_detection,
+)
 from camera_rig.capture.replay import ReplayCameraSession
 from camera_rig.core.errors import ArtifactError
 from camera_rig.targets.charuco.dependencies import cv2_module
@@ -44,7 +47,7 @@ def detect_image(
     target = load_target(target_path)
     detector = registry.create(plugin_name=target.plugin, target_spec=target)
     observation = detector.detect(image_rgb)
-    result = {
+    result: dict[str, object] = {
         "schema_version": "camera-rig.target-detection.v1",
         "target_spec_sha256": target.artifact_sha256,
         "input_image_sha256": sha256_file(image_path),
@@ -59,10 +62,11 @@ def detect_image(
         "aggregate": _aggregate([observation]),
         "software": {"camera_rig_version": __version__, "opencv_version": target.opencv_version},
     }
-    atomic_write_json(report_path, result)
+    artifact = TargetDetectionArtifact.from_dict(result)
+    write_target_detection(report_path, artifact)
     if overlay_path is not None:
         write_overlay(overlay_path, image_rgb, observation)
-    return result
+    return artifact.to_dict()
 
 
 def validate_capture_artifact_target(
@@ -105,7 +109,7 @@ def validate_capture_artifact_target(
         overlay_files[index] = filename
     aggregate = _aggregate(observations)
     manifest_path = Path(artifact_path) / "manifest.json"
-    report = {
+    report: dict[str, object] = {
         "schema_version": "camera-rig.target-detection.v1",
         "target_spec_sha256": target.artifact_sha256,
         "input_artifact": {
@@ -127,8 +131,9 @@ def validate_capture_artifact_target(
         "selected_overlays": selected,
         "software": {"camera_rig_version": __version__, "opencv_version": target.opencv_version},
     }
-    atomic_write_json(report_path, report)
-    return report
+    artifact = TargetDetectionArtifact.from_dict(report)
+    write_target_detection(report_path, artifact)
+    return artifact.to_dict()
 
 
 def _aggregate(observations: list[TargetObservation]) -> dict[str, object]:

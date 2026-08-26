@@ -1,0 +1,78 @@
+# Public contract example. Keep real serials and resolved target artifacts under .local/.
+schema_version: camera-rig.fixed-provision.v1
+
+camera:
+  name: head
+  driver: realsense
+  expected_model: D435i
+  serial: "REPLACE_WITH_DEVICE_SERIAL"
+  output_reference_stream: ir_left
+
+streams:
+  color:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: rgb8
+  depth:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: z16
+  ir_left:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: y8
+  ir_right:
+    enabled: true
+    width: 640
+    height: 480
+    fps: 30
+    format: y8
+
+capture:
+  warmup_frames: 30
+  timeout_ms: 1500
+  copy_frames: true
+
+provision:
+  stream_validation_frames: 300
+  # R6 target-detection acceptance is frozen to exactly 60 calibration frames.
+  calibration_frames: 60
+
+target:
+  artifact: ../targets/charuco_a4_v1/target_spec.json
+  # Accepted R6 resolved target artifact; do not silently regenerate or substitute it.
+  expected_sha256: 56fbd157f9553e7e78c6868e86841c37d1799af1ca0be5a8cc69efa64b845ce1
+  detection_stream: color
+
+workspace:
+  frame: workspace
+  target_frame: charuco_target
+  T_workspace_from_target:
+    matrix:
+      - [1.0, 0.0, 0.0, 0.0]
+      - [0.0, 1.0, 0.0, 0.0]
+      - [0.0, 0.0, 1.0, 0.0]
+      - [0.0, 0.0, 0.0, 1.0]
+
+fixed_calibration:
+  reference_stream: ir_left
+  method: ippe
+  refinement: lm
+  minimum_corners_per_frame: 12
+  minimum_accepted_frames: 50
+  minimum_accepted_ratio: 0.90
+  maximum_frame_rmse_px: 0.50
+  maximum_frame_p95_px: 1.00
+  maximum_pose_translation_p95_mm: 3.0
+  maximum_pose_rotation_p95_deg: 0.30
+  maximum_split_translation_delta_mm: 2.0
+  maximum_split_rotation_delta_deg: 0.20
+  pose_outlier_translation_mm: 5.0
+  pose_outlier_rotation_deg: 0.50
+  native_depth_check: true

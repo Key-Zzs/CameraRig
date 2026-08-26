@@ -9,7 +9,7 @@ from pathlib import Path
 
 from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
 from camera_rig.artifacts.hashing import sha256_file
-from camera_rig.artifacts.io import atomic_write_json
+from camera_rig.artifacts.stream_validation import write_stream_validation
 from camera_rig.capture.session import CameraSession
 from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.capture.validation import StreamValidationAccumulator
@@ -54,7 +54,14 @@ def _validate_streams(arguments: argparse.Namespace) -> int:
                 timeouts += 1
                 break
     report = accumulator.report(timeouts)
-    atomic_write_json(arguments.report, report)
+    write_stream_validation(
+        arguments.report,
+        report,
+        provenance={
+            "camera_rig_version": __version__,
+            "config_sha256": sha256_file(arguments.config),
+        },
+    )
     print(
         f"stream validation: {report['status']} "
         f"({report['received_frames']}/{report['requested_frames']} frames)"

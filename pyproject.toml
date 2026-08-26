@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camera-rig"
-version = "0.3.0"
+version = "0.4.0"
 description = "Single-camera acquisition, calibration, validation, and replay contracts"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,12 @@ charuco = [
   "opencv-contrib-python-headless==4.14.0.94",
   "reportlab>=4.2,<5",
 ]
+provision = [
+  "pyrealsense2==2.58.3.10794",
+  "opencv-contrib-python-headless==4.14.0.94",
+  "reportlab>=4.2,<5",
+  "Pillow>=10,<13",
+]
 dev = [
   "build>=1.2",
   "mypy>=1.10",
@@ -58,6 +64,12 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.data-files]
 "share/camera-rig/schemas" = ["schemas/*.json"]
+"share/camera-rig/configs/examples" = ["configs/examples/fixed_provision_contract.yaml"]
+"share/camera-rig/docs" = [
+  "docs/calibration-quality.md",
+  "docs/fixed-camera-calibration.md",
+  "docs/fixed-camera-provisioning.md",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
