@@ -136,14 +136,15 @@ camera-rig provision validate \
 
 ## Python API
 
+`camera_rig.api` 是稳定的下游接口。消费者代码不应依赖包内目录结构。
+
 ```python
 import camera_rig
-from camera_rig.capture import CameraSession, ReplayCameraSession
-from camera_rig.config import load_config
+from camera_rig.api import CameraSession, ReplayCameraSession, load_camera_config
 
 print(camera_rig.__version__)
 
-config = load_config("private-d435i.yaml")
+config = load_camera_config("private-d435i.yaml")
 with CameraSession.from_config(config) as camera:
     frame = camera.capture()
 
@@ -151,8 +152,20 @@ with ReplayCameraSession.from_artifact("capture-artifact") as replay:
     restored = replay.capture()
 ```
 
-硬件无关契约位于 `camera_rig.core`，目标插件接口位于 `camera_rig.targets`，确定性产物工具位于
-`camera_rig.artifacts`。导入这些模块不需要 RealSense 或 OpenCV。
+无需依赖完整固定相机产物的内部文件布局即可加载：
+
+```python
+from camera_rig.api import load_provisioned_camera_bundle
+
+bundle = load_provisioned_camera_bundle("fixed-camera-artifact")
+fixed = bundle.fixed_mount_calibration
+if fixed is None:
+    raise RuntimeError("camera is not fixed-calibrated")
+T_workspace_from_camera = fixed.T_parent_from_camera_reference
+```
+
+导入 `camera_rig.api` 不需要 RealSense 或 OpenCV。详见[公开 API](docs/public-api.md)、
+[稳定性策略](API_STABILITY.md)与[下游集成指南](docs/downstream-integration.md)。
 
 ## 产物
 

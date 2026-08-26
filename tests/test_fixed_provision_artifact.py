@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from camera_rig.api import load_provisioned_camera_bundle
 from camera_rig.artifacts.factory_calibration import (
     FactoryCalibrationArtifact,
     write_factory_calibration,
@@ -499,6 +500,9 @@ def test_writer_publishes_exact_validated_layout(
         created_at=CREATED_AT,
     )
     assert manifest == load_and_validate_fixed_provision(output)
+    public_bundle = load_provisioned_camera_bundle(output)
+    assert public_bundle.status == "passed"
+    assert public_bundle.fixed_mount_calibration is not None
     assert manifest.status == "passed" and manifest.quality.passed
     assert all((output / path).is_file() for path in ARTIFACT_PATHS.values())
     assert set(manifest.diagnostics) == set(DIAGNOSTIC_OVERLAY_ROOTS)

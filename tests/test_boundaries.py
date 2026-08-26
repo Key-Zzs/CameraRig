@@ -53,22 +53,28 @@ def test_configuration_uses_singular_camera_root() -> None:
     assert '"cameras"' not in schema
 
 
-def test_core_import_does_not_request_hardware_packages() -> None:
+def test_public_api_import_does_not_request_optional_packages() -> None:
     script = """
 import importlib.abc
 import sys
 
 class Blocker(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'pyrealsense2', 'cv2'}:
+        if fullname.split('.')[0] in {'pyrealsense2', 'cv2', 'PIL', 'reportlab'}:
             raise RuntimeError(f'forbidden hardware import: {fullname}')
         return None
 
 sys.meta_path.insert(0, Blocker())
 import camera_rig
-import camera_rig.core
-from camera_rig.core import CameraFrame
-from camera_rig.targets import TargetDetector, TargetObservation
+import camera_rig.api
+from camera_rig.api import (
+    CameraBundle,
+    CameraFrame,
+    CameraSession,
+    ReplayCameraSession,
+    load_camera_bundle,
+    load_provisioned_camera_bundle,
+)
 print(camera_rig.__version__)
 """
     result = subprocess.run(
@@ -79,7 +85,7 @@ print(camera_rig.__version__)
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "0.4.0"
+    assert result.stdout.strip() == "1.0.0"
 
 
 def test_replay_import_does_not_request_hardware_or_preview_packages() -> None:

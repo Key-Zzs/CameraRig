@@ -1,0 +1,189 @@
+{
+  "bundle_id": "synthetic-consumer-fixed-camera",
+  "coordinate_convention": {
+    "handedness": "right-handed",
+    "length_unit": "meter",
+    "time_unit": "nanosecond",
+    "transform_naming": "T_target_from_source",
+    "vector": "column"
+  },
+  "created_at": "2026-08-26T00:00:00Z",
+  "depth_scale_m_per_unit": 0.001,
+  "device": {
+    "camera_name": "synthetic_camera",
+    "canonical_model": "Synthetic Camera v1",
+    "driver": "synthetic",
+    "expected_model": "Synthetic Camera v1",
+    "firmware_version": "synthetic-firmware",
+    "metadata": {
+      "real_hardware": false,
+      "source": "consumer-fixture"
+    },
+    "physical_port": "synthetic-port",
+    "product_id": "SYNTHETIC",
+    "product_line": "synthetic",
+    "reported_model": "Synthetic Camera v1",
+    "sdk_version": "synthetic-sdk",
+    "serial": "SYNTHETIC-CONSUMER-0001",
+    "usb_type": "synthetic"
+  },
+  "fixed_mount_calibration": {
+    "T_parent_from_camera_reference": {
+      "matrix": [
+        [0.0, -1.0, 0.0, 0.5],
+        [1.0, 0.0, 0.0, -0.25],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source_frame": "synthetic_camera/ir_left_optical",
+      "target_frame": "workspace"
+    },
+    "camera_reference_frame": "synthetic_camera/ir_left_optical",
+    "mount_type": "fixed",
+    "parent_frame": "workspace",
+    "provenance": {
+      "real_hardware": false,
+      "source": "consumer-fixture"
+    },
+    "quality": {
+      "failure_reasons": [],
+      "metrics": {
+        "synthetic": true
+      },
+      "passed": true,
+      "thresholds": {},
+      "warnings": []
+    }
+  },
+  "internal_transforms": [
+    {
+      "matrix": [
+        [1.0, 0.0, 0.0, 0.02],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source_frame": "synthetic_camera/ir_left_optical",
+      "target_frame": "synthetic_camera/color_optical"
+    },
+    {
+      "matrix": [
+        [1.0, 0.0, 0.0, 0.01],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source_frame": "synthetic_camera/ir_left_optical",
+      "target_frame": "synthetic_camera/depth_optical"
+    },
+    {
+      "matrix": [
+        [1.0, 0.0, 0.0, -0.05],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+      ],
+      "source_frame": "synthetic_camera/ir_left_optical",
+      "target_frame": "synthetic_camera/ir_right_optical"
+    }
+  ],
+  "intrinsics": {
+    "color": {
+      "cx": 1.5,
+      "cy": 1.0,
+      "distortion_coeffs": [],
+      "distortion_model": "none",
+      "frame": "synthetic_camera/color_optical",
+      "fx": 3.0,
+      "fy": 3.0,
+      "height": 3,
+      "width": 4
+    },
+    "depth": {
+      "cx": 1.5,
+      "cy": 1.0,
+      "distortion_coeffs": [],
+      "distortion_model": "none",
+      "frame": "synthetic_camera/depth_optical",
+      "fx": 3.0,
+      "fy": 3.0,
+      "height": 3,
+      "width": 4
+    },
+    "ir_left": {
+      "cx": 1.5,
+      "cy": 1.0,
+      "distortion_coeffs": [],
+      "distortion_model": "none",
+      "frame": "synthetic_camera/ir_left_optical",
+      "fx": 3.0,
+      "fy": 3.0,
+      "height": 3,
+      "width": 4
+    },
+    "ir_right": {
+      "cx": 1.5,
+      "cy": 1.0,
+      "distortion_coeffs": [],
+      "distortion_model": "none",
+      "frame": "synthetic_camera/ir_right_optical",
+      "fx": 3.0,
+      "fy": 3.0,
+      "height": 3,
+      "width": 4
+    }
+  },
+  "provenance": {
+    "real_hardware": false,
+    "source": "consumer-fixture"
+  },
+  "quality": {
+    "failure_reasons": [],
+    "metrics": {
+      "synthetic": true
+    },
+    "passed": true,
+    "thresholds": {},
+    "warnings": []
+  },
+  "schema_version": "camera-rig.bundle.v1",
+  "status": "passed",
+  "stream_profiles": {
+    "color": {
+      "format": "rgb8",
+      "fps": 30,
+      "height": 3,
+      "index": 0,
+      "sensor_identifier": "synthetic-color",
+      "stream_name": "color",
+      "width": 4
+    },
+    "depth": {
+      "format": "z16",
+      "fps": 30,
+      "height": 3,
+      "index": 0,
+      "sensor_identifier": "synthetic-depth",
+      "stream_name": "depth",
+      "width": 4
+    },
+    "ir_left": {
+      "format": "y8",
+      "fps": 30,
+      "height": 3,
+      "index": 1,
+      "sensor_identifier": "synthetic-stereo",
+      "stream_name": "ir_left",
+      "width": 4
+    },
+    "ir_right": {
+      "format": "y8",
+      "fps": 30,
+      "height": 3,
+      "index": 2,
+      "sensor_identifier": "synthetic-stereo",
+      "stream_name": "ir_right",
+      "width": 4
+    }
+  }
+}

@@ -9,9 +9,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from camera_rig.api import ReplayCameraSession
 from camera_rig.artifacts.capture_validation import validate_capture_artifact
 from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
-from camera_rig.capture.replay import ReplayCameraSession
 from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.core.device_info import CameraDeviceInfo
 from camera_rig.core.errors import ArtifactError, LifecycleError, ReplayEOFError
