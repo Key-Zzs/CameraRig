@@ -61,10 +61,12 @@ a reproducible fixed-camera workflow.
 Status: implemented and validated twice on a physical D435i, including atomic artifact
 publication, complete checksums, CameraBundle validation, and end-to-end repeatability.
 
-## R9 PCB Integration Contract & v1.0
+## R9 Stable Consumer API & v1.0
 
 Stabilize the consumer-facing CameraBundle contract and integration boundary for a 1.0
 release.
+
+Status: implemented; the consumer API is stabilized and the v1.0 contract is ready.
 
 ## Post-v1 candidates
 

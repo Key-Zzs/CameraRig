@@ -145,14 +145,16 @@ rejected instead of coerced.
 
 ## Python API
 
+`camera_rig.api` is the stable downstream interface. Consumer code should not depend on
+the package's internal directory structure.
+
 ```python
 import camera_rig
-from camera_rig.capture import CameraSession, ReplayCameraSession
-from camera_rig.config import load_config
+from camera_rig.api import CameraSession, ReplayCameraSession, load_camera_config
 
 print(camera_rig.__version__)
 
-config = load_config("private-d435i.yaml")
+config = load_camera_config("private-d435i.yaml")
 with CameraSession.from_config(config) as camera:
     frame = camera.capture()
 
@@ -160,9 +162,22 @@ with ReplayCameraSession.from_artifact("capture-artifact") as replay:
     restored = replay.capture()
 ```
 
-Hardware-independent contracts are available from `camera_rig.core`, target plugin
-interfaces from `camera_rig.targets`, and deterministic artifact helpers from
-`camera_rig.artifacts`. Importing these modules does not require RealSense or OpenCV.
+Load a complete fixed-camera provision artifact without depending on its internal file
+layout:
+
+```python
+from camera_rig.api import load_provisioned_camera_bundle
+
+bundle = load_provisioned_camera_bundle("fixed-camera-artifact")
+fixed = bundle.fixed_mount_calibration
+if fixed is None:
+    raise RuntimeError("camera is not fixed-calibrated")
+T_workspace_from_camera = fixed.T_parent_from_camera_reference
+```
+
+Importing `camera_rig.api` does not require RealSense or OpenCV. See the
+[public API](docs/public-api.md), [stability policy](API_STABILITY.md), and
+[downstream integration guide](docs/downstream-integration.md).
 
 ## Artifacts
 

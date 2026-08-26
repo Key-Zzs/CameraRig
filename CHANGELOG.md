@@ -7,6 +7,25 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-26
+
+### Added
+
+- A stable, explicitly frozen `camera_rig.api` consumer façade for configuration,
+  runtime and replay frames, calibration contracts, and CameraBundle loading.
+- Complete provision-directory loading that validates manifests, exact files, checksums,
+  nested artifacts, quality decisions, transforms, and cross-file identities before
+  returning the fixed-camera CameraBundle.
+- Synthetic consumer fixtures, transform-direction coverage, a typed downstream sample,
+  core-only wheel smoke coverage, and live/replay/fixed-geometry integration guidance.
+
+### Changed
+
+- Package version is now 1.0.0 and the development classifier is Beta.
+- Downstream integrations now use `camera_rig.api`; algorithm, driver, provisioning, and
+  command implementation paths are explicitly internal.
+- Existing 0.4.0 fixed-provision artifacts remain readable through the v1 public loader.
+
 ## [0.4.0] - 2026-08-25
 
 ### Added
