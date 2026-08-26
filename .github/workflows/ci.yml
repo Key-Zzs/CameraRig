@@ -71,7 +71,7 @@ jobs:
               load_camera_bundle,
           )
 
-          assert camera_rig.__version__ == "1.0.0"
+          assert camera_rig.__version__ == "1.1.0.dev0"
           assert importlib.util.find_spec("pyrealsense2") is None
           bundle = load_camera_bundle(
               Path("tests/fixtures/consumer/fixed_camera_bundle_v1.json")
