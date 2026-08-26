@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import numpy.typing as npt
 
@@ -38,7 +40,10 @@ def project_points_px(
         )
     except cv2.error as error:
         raise ContractError(f"OpenCV projection failed: {error}") from error
-    result = np.asarray(projected, dtype=np.float64).reshape(-1, 2).copy()
+    result = cast(
+        npt.NDArray[np.float64],
+        np.asarray(projected, dtype=np.float64).reshape(-1, 2).copy(),
+    )
     if not np.isfinite(result).all():
         raise ContractError("OpenCV projection returned non-finite pixels")
     result.setflags(write=False)

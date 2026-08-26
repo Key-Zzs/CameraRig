@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image
 
 from camera_rig.artifacts.hashing import sha256_file
 from camera_rig.artifacts.io import load_json
@@ -47,7 +46,7 @@ from camera_rig.targets.io import load_target, validate_target_artifact
 from camera_rig.targets.observation import TargetObservation
 
 pytest.importorskip("cv2")
-pytest.importorskip("PIL")
+Image = pytest.importorskip("PIL.Image")
 pytestmark = pytest.mark.charuco
 
 _WIDTH = 64
