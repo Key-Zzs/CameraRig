@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/stream_validation.v1.schema.json",
+  "title": "CameraRig raw stream validation artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "requested_frames",
+    "received_frames",
+    "duration_s",
+    "per_stream_observed_fps",
+    "per_stream_frame_number_discontinuities",
+    "per_stream_discontinuity_ratio",
+    "per_stream_timestamp_monotonicity",
+    "per_stream_timestamp_domain_counts",
+    "ir_stereo_frame_match_ratio",
+    "comparable_timestamp_skew_ns",
+    "sync_valid_ratio",
+    "timeouts",
+    "missing_streams",
+    "shape_consistency",
+    "dtype_consistency",
+    "depth_valid_ratio",
+    "rgb_variance",
+    "rgb_channel_variance",
+    "ir_variance",
+    "ir_distinct_ratio",
+    "failure_reasons",
+    "quality",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.stream-validation.v1"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "requested_frames": {"type": "integer", "minimum": 1},
+    "received_frames": {"type": "integer", "minimum": 0},
+    "duration_s": {"type": "number", "minimum": 0},
+    "per_stream_observed_fps": {"$ref": "#/$defs/stream_non_negative_number_map"},
+    "per_stream_frame_number_discontinuities": {
+      "$ref": "#/$defs/stream_non_negative_integer_map"
+    },
+    "per_stream_discontinuity_ratio": {"$ref": "#/$defs/stream_ratio_map"},
+    "per_stream_timestamp_monotonicity": {"$ref": "#/$defs/stream_boolean_map"},
+    "per_stream_timestamp_domain_counts": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ir_stereo_frame_match_ratio": {"$ref": "#/$defs/ratio"},
+    "comparable_timestamp_skew_ns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p95", "max"],
+      "properties": {
+        "p50": {"type": ["number", "null"], "minimum": 0},
+        "p95": {"type": ["number", "null"], "minimum": 0},
+        "max": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "sync_valid_ratio": {"$ref": "#/$defs/ratio"},
+    "timeouts": {"type": "integer", "minimum": 0},
+    "missing_streams": {"$ref": "#/$defs/stream_non_negative_integer_map"},
+    "shape_consistency": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "dtype_consistency": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {"type": "string", "minLength": 1}
+      }
+    },
+    "depth_valid_ratio": {"$ref": "#/$defs/ratio"},
+    "rgb_variance": {"type": "number", "minimum": 0},
+    "rgb_channel_variance": {
+      "oneOf": [
+        {"type": "array", "maxItems": 0},
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "number", "minimum": 0}
+        }
+      ]
+    },
+    "ir_variance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ir_left", "ir_right"],
+      "properties": {
+        "ir_left": {"type": "number", "minimum": 0},
+        "ir_right": {"type": "number", "minimum": 0}
+      }
+    },
+    "ir_distinct_ratio": {"$ref": "#/$defs/ratio"},
+    "failure_reasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "quality": {"$ref": "camera_bundle.v1.schema.json#/$defs/quality"},
+    "provenance": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "PASS"}}},
+      "then": {
+        "properties": {
+          "failure_reasons": {"maxItems": 0},
+          "quality": {"properties": {"passed": {"const": true}}}
+        }
+      },
+      "else": {
+        "properties": {
+          "failure_reasons": {"minItems": 1},
+          "quality": {"properties": {"passed": {"const": false}}}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "stream_name": {"enum": ["color", "depth", "ir_left", "ir_right"]},
+    "ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "stream_non_negative_number_map": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {"type": "number", "minimum": 0}
+    },
+    "stream_non_negative_integer_map": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "stream_ratio_map": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {"$ref": "#/$defs/ratio"}
+    },
+    "stream_boolean_map": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/stream_name"},
+      "additionalProperties": {"type": "boolean"}
+    }
+  }
+}

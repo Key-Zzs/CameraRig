@@ -50,10 +50,16 @@ board and a 60-frame D435i capture.
 
 Estimate, validate, and persist a fixed camera's transform to its parent frame.
 
+Status: implemented and validated on a physical D435i with robust multi-frame pose,
+split-half stability, native-depth sanity, and axis/reprojection diagnostics.
+
 ## R8 One-Command Fixed Camera Provisioning
 
 Combine device validation, capture, calibration, quality gates, and bundle generation in
 a reproducible fixed-camera workflow.
+
+Status: implemented and validated twice on a physical D435i, including atomic artifact
+publication, complete checksums, CameraBundle validation, and end-to-end repeatability.
 
 ## R9 PCB Integration Contract & v1.0
 

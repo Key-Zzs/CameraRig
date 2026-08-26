@@ -7,6 +7,25 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-25
+
+### Added
+
+- Generic planar IPPE pose estimation with explicit candidate, cheirality, printed-face,
+  distortion, LM-refinement, reprojection, and frame-direction contracts.
+- Robust multi-frame fixed-camera calibration with medoid aggregation, pose outlier
+  rejection, joint refinement, split-half stability, native-depth sanity, diagnostic
+  overlays, and validated `FixedMountCalibration` output.
+- One-YAML, one-command fixed-camera provisioning with a single live acquisition,
+  deterministic 60-of-300 frame selection, strict preflight, a populated CameraBundle,
+  checksums, exact-file-set validation, and atomic replacement semantics.
+
+### Changed
+
+- Package version is now 0.4.0.
+- Stream-validation and target-detection reports are typed, schema-validated artifacts
+  that are cross-bound to capture, target, calibration, and bundle evidence.
+
 ## [0.3.0] - 2026-08-25
 
 ### Added

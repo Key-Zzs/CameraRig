@@ -37,6 +37,12 @@ Install the ChArUco target generator and detector dependencies:
 python -m pip install -e ".[charuco]"
 ```
 
+Install the complete fixed-camera provisioning runtime:
+
+```bash
+python -m pip install -e ".[dev,provision]"
+```
+
 Keep the physical device serial in a private, ignored configuration. The public example
 uses `REPLACE_WITH_DEVICE_SERIAL` deliberately.
 
@@ -105,6 +111,29 @@ camera-rig target validate-artifact \
   --overlays .local/overlays/target-validation
 ```
 
+Provision a fixed D435i from one strict YAML contract, or inspect the complete plan
+without opening the camera:
+
+```bash
+camera-rig provision fixed \
+  --config .local/configs/fixed_provision.yaml \
+  --output .local/artifacts/fixed_camera \
+  --dry-run
+camera-rig provision fixed \
+  --config .local/configs/fixed_provision.yaml \
+  --output .local/artifacts/fixed_camera
+camera-rig provision validate \
+  --artifact .local/artifacts/fixed_camera
+```
+
+The fixed workflow defines `workspace` as the persisted ChArUco target frame and emits
+`T_workspace_from_<camera>/ir_left_optical` inside a validated `CameraBundle`. The camera
+and target remain fixed throughout acquisition; repeated frames measure detection and
+pose repeatability rather than recalibrating intrinsics. See
+[fixed-camera calibration](docs/fixed-camera-calibration.md),
+[fixed-camera provisioning](docs/fixed-camera-provisioning.md), and
+[calibration quality](docs/calibration-quality.md).
+
 `TargetDetector` is a hardware-independent plugin contract. The ChArUco implementation
 returns image points, stable point IDs, persisted canonical target points, and 2D quality
 metrics; it does not estimate target pose or camera extrinsics. See
@@ -140,8 +169,8 @@ interfaces from `camera_rig.targets`, and deterministic artifact helpers from
 `CameraBundle` is the versioned top-level JSON contract for one physical camera. It can
 contain device identity, stream profiles, per-stream intrinsics, internal optical-frame
 transforms, depth scale, an optional fixed-mount calibration, quality results, and
-provenance. JSON writing is deterministic and atomic; persisted transforms are
-revalidated when loaded.
+provenance. Fixed provisioning always populates and validates that mount record. JSON
+writing is deterministic and atomic; persisted transforms are revalidated when loaded.
 
 A capture artifact stores raw `uint8` RGB, raw `uint16` depth, both raw `uint8` infrared
 streams, per-stream timing metadata, a factory-calibration artifact, and SHA-256 hashes.

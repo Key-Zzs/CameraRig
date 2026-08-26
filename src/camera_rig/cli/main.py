@@ -11,6 +11,7 @@ from camera_rig.artifacts.validation import load_and_validate_bundle
 from camera_rig.cli.commands.calibration import add_calibration_commands
 from camera_rig.cli.commands.capture import add_capture_commands
 from camera_rig.cli.commands.device import add_device_commands
+from camera_rig.cli.commands.provision import add_provision_commands
 from camera_rig.cli.commands.replay import add_replay_commands
 from camera_rig.cli.commands.target import add_target_commands
 from camera_rig.config.loader import load_config
@@ -33,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_capture_commands(commands)
     add_replay_commands(commands)
     add_target_commands(commands)
+    add_provision_commands(commands)
 
     config_parser = commands.add_parser("config", help="configuration operations")
     config_commands = config_parser.add_subparsers(dest="config_command", required=True)

@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from camera_rig.artifacts.io import json_safe
 from camera_rig.cli.main import main
-from camera_rig.config.loader import load_config
+from camera_rig.config.loader import load_config, validate_camera_config_data
 from camera_rig.core.errors import ConfigurationError, SchemaValidationError
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -33,6 +34,19 @@ def test_valid_yaml() -> None:
     assert set(config.streams) == {"color", "depth", "ir_left", "ir_right"}
     assert config.capture.sync.max_comparable_stream_skew_ms == 5.0
     assert config.capture.sync.require_stereo_frame_number_match
+
+
+def test_in_memory_camera_config_uses_same_strict_contract() -> None:
+    value = json_safe(_example_data())
+    config = validate_camera_config_data(value)
+    assert config.camera.serial == "REPLACE_WITH_DEVICE_SERIAL"
+
+    assert isinstance(value, dict)
+    camera = value["camera"]
+    assert isinstance(camera, dict)
+    camera["unknown"] = True
+    with pytest.raises(SchemaValidationError, match=r"\$\.camera"):
+        validate_camera_config_data(value)
 
 
 @pytest.mark.parametrize("content", ["", "- not\n- a\n- mapping\n"])

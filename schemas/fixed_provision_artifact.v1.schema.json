@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_provision_artifact.v1.schema.json",
+  "title": "CameraRig fixed-camera provision artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "created_at",
+    "camera_rig_version",
+    "status",
+    "artifacts",
+    "diagnostics",
+    "quality",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-provision-artifact.v1"},
+    "artifact_id": {"type": "string", "format": "uuid"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "camera_rig_version": {"type": "string", "minLength": 1},
+    "status": {"const": "passed"},
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "camera_bundle",
+        "factory_calibration",
+        "capture_manifest",
+        "target_spec",
+        "target_detection",
+        "fixed_calibration",
+        "stream_validation"
+      ],
+      "properties": {
+        "camera_bundle": {
+          "$ref": "#/$defs/camera_bundle_reference"
+        },
+        "factory_calibration": {
+          "$ref": "#/$defs/factory_calibration_reference"
+        },
+        "capture_manifest": {
+          "$ref": "#/$defs/capture_manifest_reference"
+        },
+        "target_spec": {
+          "$ref": "#/$defs/target_spec_reference"
+        },
+        "target_detection": {
+          "$ref": "#/$defs/target_detection_reference"
+        },
+        "fixed_calibration": {
+          "$ref": "#/$defs/fixed_calibration_reference"
+        },
+        "stream_validation": {
+          "$ref": "#/$defs/stream_validation_reference"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_detection", "fixed_calibration"],
+      "properties": {
+        "target_detection": {
+          "$ref": "#/$defs/target_detection_overlays"
+        },
+        "fixed_calibration": {
+          "$ref": "#/$defs/fixed_calibration_overlays"
+        }
+      }
+    },
+    "quality": {"$ref": "camera_bundle.v1.schema.json#/$defs/quality"},
+    "provenance": {"type": "object"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "camera_bundle_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {"properties": {"path": {"const": "camera_bundle.json"}}}
+      ]
+    },
+    "factory_calibration_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {"properties": {"path": {"const": "factory/factory_calibration.json"}}}
+      ]
+    },
+    "capture_manifest_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {
+          "properties": {
+            "path": {"const": "capture/calibration_snapshot/manifest.json"}
+          }
+        }
+      ]
+    },
+    "target_spec_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {"properties": {"path": {"const": "target/target_spec.json"}}}
+      ]
+    },
+    "target_detection_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {"properties": {"path": {"const": "target/detection_report.json"}}}
+      ]
+    },
+    "fixed_calibration_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {
+          "properties": {
+            "path": {"const": "calibration/fixed_calibration.json"}
+          }
+        }
+      ]
+    },
+    "stream_validation_reference": {
+      "allOf": [
+        {"$ref": "#/$defs/reference"},
+        {"properties": {"path": {"const": "reports/stream_validation.json"}}}
+      ]
+    },
+    "target_detection_overlays": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["best", "median_quality", "worst_accepted"],
+      "properties": {
+        "best": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/target_detection/best_[^/]+\\.png$"}}}
+          ]
+        },
+        "median_quality": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/target_detection/median_quality_[^/]+\\.png$"}}}
+          ]
+        },
+        "worst_accepted": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/target_detection/worst_accepted_[^/]+\\.png$"}}}
+          ]
+        }
+      }
+    },
+    "fixed_calibration_overlays": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["best", "median_quality", "worst_accepted"],
+      "properties": {
+        "best": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/fixed_calibration/best_[^/]+\\.png$"}}}
+          ]
+        },
+        "median_quality": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/fixed_calibration/median_quality_[^/]+\\.png$"}}}
+          ]
+        },
+        "worst_accepted": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"pattern": "^diagnostics/overlays/fixed_calibration/worst_accepted_[^/]+\\.png$"}}}
+          ]
+        }
+      }
+    }
+  }
+}
