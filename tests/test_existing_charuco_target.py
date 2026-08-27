@@ -293,8 +293,7 @@ def test_wrong_authoritative_dictionary_reports_visual_conflict(tmp_path: Path) 
     )
     assert report["status"] == "FAIL"
     assert (
-        report["classification"]
-        == "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
+        report["classification"] == "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
     )
     assert report["winner"] is None
 

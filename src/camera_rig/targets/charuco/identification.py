@@ -199,8 +199,7 @@ def identify_existing_board(
             next(
                 item
                 for item in passing
-                if item["candidate_key"]
-                == release_classes[0]["representative_candidate_key"]
+                if item["candidate_key"] == release_classes[0]["representative_candidate_key"]
             )
         )
         if unique
@@ -226,11 +225,7 @@ def identify_existing_board(
     report: dict[str, object] = {
         "schema_version": IDENTIFICATION_SCHEMA_VERSION,
         "status": (
-            "FAIL"
-            if dictionary_conflict
-            else "PASS"
-            if unique
-            else "PAUSED_FOR_USER_VALIDATION"
+            "FAIL" if dictionary_conflict else "PASS" if unique else "PAUSED_FOR_USER_VALIDATION"
         ),
         "classification": classification,
         "candidate_uniqueness": unique,
@@ -667,9 +662,7 @@ def _equivalence_classes(
                 equivalence_class["representative_candidate_key"],
                 "representative_candidate_key",
             )
-            proof = _candidate_equivalence_proof(
-                candidate_by_key[representative_key], candidate
-            )
+            proof = _candidate_equivalence_proof(candidate_by_key[representative_key], candidate)
             if proof["equivalent"] is not True:
                 continue
             member_keys = equivalence_class["candidate_keys"]
@@ -747,9 +740,7 @@ def _candidate_equivalence_proof(
         "generated_images_binary": set(np.unique(first_render)).issubset({0, 255})
         and set(np.unique(second_render)).issubset({0, 255}),
         "generated_binary_board_image_equal": np.array_equal(first_render, second_render),
-        "canonical_corner_id_mapping_equal": canonical_corners_from_board(
-            first, first_board
-        )
+        "canonical_corner_id_mapping_equal": canonical_corners_from_board(first, first_board)
         == canonical_corners_from_board(second, second_board),
     }
     return {
@@ -1004,9 +995,7 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
         raise ArtifactError("identification basis is inconsistent")
     if authoritative_source_count != (1 if expected_basis.endswith("source") else 0):
         raise ArtifactError("identification authoritative-source evidence is inconsistent")
-    if authoritative_user_metadata_count != (
-        1 if expected_basis.endswith("user-metadata") else 0
-    ):
+    if authoritative_user_metadata_count != (1 if expected_basis.endswith("user-metadata") else 0):
         raise ArtifactError("identification authoritative user metadata is inconsistent")
     if authoritative_user_metadata_count and metadata_constraints != constraints:
         raise ArtifactError("identification authoritative user metadata differs from constraints")
@@ -1155,13 +1144,7 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
     )
     if (
         report.get("status")
-        != (
-            "FAIL"
-            if dictionary_conflict
-            else "PASS"
-            if unique
-            else "PAUSED_FOR_USER_VALIDATION"
-        )
+        != ("FAIL" if dictionary_conflict else "PASS" if unique else "PAUSED_FOR_USER_VALIDATION")
         or report.get("classification") != expected_classification
         or report.get("candidate_uniqueness") is not unique
     ):
@@ -1171,8 +1154,7 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
             next(
                 item
                 for item in passing
-                if item["candidate_key"]
-                == release_classes[0]["representative_candidate_key"]
+                if item["candidate_key"] == release_classes[0]["representative_candidate_key"]
             )
         )
         if unique
@@ -1269,23 +1251,15 @@ def _validated_candidate_entry(
         )
         if not 0.0 <= inlier_fraction <= 1.0:
             raise ArtifactError("candidate marker layout inlier fraction lies outside [0, 1]")
-        threshold_px = _number(
-            frame.get("marker_layout_threshold_px"), "marker layout threshold"
-        )
+        threshold_px = _number(frame.get("marker_layout_threshold_px"), "marker layout threshold")
         if threshold_px <= 0.0:
             raise ArtifactError("candidate marker layout threshold must be positive")
         p95_value = frame.get("marker_layout_p95_error_px")
-        p95_error_px = (
-            None
-            if p95_value is None
-            else _number(p95_value, "marker layout p95 error")
-        )
+        p95_error_px = None if p95_value is None else _number(p95_value, "marker layout p95 error")
         if p95_error_px is not None and p95_error_px < 0.0:
             raise ArtifactError("candidate marker layout error must be non-negative")
         expected_layout = (
-            p95_error_px is not None
-            and inlier_fraction >= 0.80
-            and p95_error_px <= threshold_px
+            p95_error_px is not None and inlier_fraction >= 0.80 and p95_error_px <= threshold_px
         )
         if layout is not expected_layout:
             raise ArtifactError("candidate marker layout conclusion is inconsistent")
@@ -1293,9 +1267,7 @@ def _validated_candidate_entry(
             frame.get("charuco_corner_id_mapping_consistent"),
             "ChArUco corner ID mapping",
         )
-        expected_accepted = (
-            corner_count >= 20 and fraction >= 0.80 and layout and corner_mapping
-        )
+        expected_accepted = corner_count >= 20 and fraction >= 0.80 and layout and corner_mapping
         if frame.get("accepted") is not expected_accepted:
             raise ArtifactError("candidate frame acceptance is inconsistent")
         accepted.append(expected_accepted)
