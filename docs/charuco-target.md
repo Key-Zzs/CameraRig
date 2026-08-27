@@ -24,10 +24,14 @@ camera-rig target identify-existing \
   --output .local/target/identification.json
 ```
 
-Register only a report with one unique dictionary, orientation, legacy mode, border-bit
-setting, marker layout, and independently consistent multi-camera match. Registration
-recomputes every ranking and acceptance invariant instead of trusting editable conclusion
-fields:
+Register only a report with one unique observational identity class: dictionary,
+orientation, border-bit setting, spatial marker-ID layout, canonical ChArUco corner-ID
+mapping, and independently consistent multi-camera evidence must agree. A differing
+`legacy_pattern` value may share that identity class only when CameraRig proves identical
+OpenCV marker IDs, marker corners, chessboard corners, canonical corner mapping, and a
+deterministically generated binary board image. Non-equivalent legacy candidates remain
+separate and fail closed. Registration recomputes every ranking, equivalence proof, and
+acceptance invariant instead of trusting editable conclusion fields:
 
 ```bash
 camera-rig target register-existing \
@@ -40,12 +44,17 @@ camera-rig target register-existing \
 That artifact contains only `target_spec.json`, `registration_report.json`, and
 `checksums.sha256`. It retains evidence hashes but no source images and no fake print
 PDF. Ambiguous results preserve the complete ranking and return
-`PAUSED_FOR_USER_VALIDATION`; resolve them from the original PDF or generator metadata.
-Pass that local source with `--authoritative-source` plus the relevant
+`PAUSED_FOR_USER_VALIDATION`; resolve them from the original PDF, generator metadata, or
+authoritative board-owner metadata. Pass a local source with `--authoritative-source`, or
+record user-provided metadata directly, plus the relevant
 `--authoritative-dictionary`, `--authoritative-legacy-pattern`,
 `--authoritative-border-bits`, or `--authoritative-orientation` constraints. The report
-stores only the source SHA-256, never its path or contents, and still requires every
-vision gate to pass before the authoritative constraint may break a tie.
+stores a canonical SHA-256 receipt, never a local path or source contents, and still
+requires every vision gate to pass before an authoritative constraint may break a tie.
+If an authoritative dictionary has no visual support while another dictionary passes
+both capture sources, identification returns
+`USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE`; it never falls back to
+the visually preferred dictionary.
 
 Run pose-free deployment preflight before fixed provisioning:
 

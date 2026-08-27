@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import uuid
@@ -27,7 +28,9 @@ from camera_rig.targets.charuco.geometry import (
 from camera_rig.targets.io import validate_target_artifact
 from camera_rig.version import __version__
 
-IDENTIFICATION_SCHEMA_VERSION = "camera-rig.target-identification.v1"
+IDENTIFICATION_SCHEMA_VERSION = "camera-rig.target-identification.v2"
+
+_EQUIVALENCE_RENDER_PIXELS_PER_SQUARE = 128
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,19 @@ def identify_existing_board(
                 "sha256": sha256_file(authoritative_source_path),
             }
         )
+    elif constraints:
+        metadata_payload = json.dumps(
+            constraints,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        evidence.append(
+            {
+                "kind": "authoritative_user_metadata",
+                "constraints": dict(constraints),
+                "sha256": sha256_bytes(metadata_payload),
+            }
+        )
     cv2 = cv2_module()
     candidates = _candidates(dimensions)
     ranking = [
@@ -148,6 +164,11 @@ def identify_existing_board(
         item for item in vision_passing if _matches_constraints(item, constraints)
     ]
     passing = [item for item in release_passing if _matches_constraints(item, constraints)]
+    candidate_by_key = {candidate.key: candidate for candidate in candidates}
+    equivalence_classes = _equivalence_classes(
+        constrained_vision,
+        candidate_by_key,
+    )
     gridboard = (
         not vision_passing
         and any(
@@ -160,9 +181,43 @@ def identify_existing_board(
             for item in ranking
         )
     )
-    unique = len(passing) == 1
-    winner = dict(passing[0]) if unique else None
-    if gridboard:
+    release_keys = {str(item["candidate_key"]) for item in passing}
+    release_classes: list[dict[str, object]] = []
+    for equivalence_class in equivalence_classes:
+        candidate_keys = equivalence_class["candidate_keys"]
+        assert isinstance(candidate_keys, list)
+        if set(candidate_keys).issubset(release_keys):
+            release_classes.append(equivalence_class)
+    dictionary_conflict = _authoritative_dictionary_conflict(
+        release_passing=release_passing,
+        passing=passing,
+        constraints=constraints,
+    )
+    unique = len(equivalence_classes) == 1 and len(release_classes) == 1
+    winner = (
+        dict(
+            next(
+                item
+                for item in passing
+                if item["candidate_key"]
+                == release_classes[0]["representative_candidate_key"]
+            )
+        )
+        if unique
+        else None
+    )
+    resolved_identity = (
+        _resolved_identity(winner, release_classes[0]) if winner is not None else None
+    )
+    equivalent_fields_set: set[str] = set()
+    for equivalence_class in equivalence_classes:
+        fields = equivalence_class["equivalent_candidate_fields"]
+        assert isinstance(fields, list)
+        equivalent_fields_set.update(str(field) for field in fields)
+    equivalent_candidate_fields = sorted(equivalent_fields_set)
+    if dictionary_conflict:
+        classification = "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
+    elif gridboard:
         classification = "ARUCO_GRIDBOARD_NOT_CHARUCO"
     elif unique:
         classification = "CHARUCO_EXISTING_PHYSICAL"
@@ -170,18 +225,29 @@ def identify_existing_board(
         classification = "UNRESOLVED_CHARUCO_CANDIDATE"
     report: dict[str, object] = {
         "schema_version": IDENTIFICATION_SCHEMA_VERSION,
-        "status": "PASS" if unique else "PAUSED_FOR_USER_VALIDATION",
+        "status": (
+            "FAIL"
+            if dictionary_conflict
+            else "PASS"
+            if unique
+            else "PAUSED_FOR_USER_VALIDATION"
+        ),
         "classification": classification,
         "candidate_uniqueness": unique,
         "identification_basis": (
-            "vision-and-authoritative-source" if constraints else "vision-only"
+            "vision-and-authoritative-source"
+            if authoritative_source_path is not None
+            else "vision-and-authoritative-user-metadata"
+            if constraints
+            else "vision-only"
         ),
         "authoritative_constraints": constraints,
         "ambiguity_reason": _ambiguity_reason(
-            passing if passing else constrained_vision,
+            equivalence_classes,
             len(images),
             gridboard,
             len(set(filter(None, release_source_ids))),
+            dictionary_conflict=dictionary_conflict,
         ),
         "physical_measurement": {
             "nominal_width_mm": dimensions.board_width_mm,
@@ -194,6 +260,9 @@ def identify_existing_board(
         "evidence_frame_count": len(images),
         "distinct_capture_source_count": len(set(filter(None, release_source_ids))),
         "winner": winner,
+        "equivalent_candidate_fields": equivalent_candidate_fields,
+        "equivalence_classes": equivalence_classes,
+        "resolved_identity": resolved_identity,
         "candidate_ranking": ranking,
         "acceptance": {
             "minimum_evidence_frames": 2,
@@ -202,7 +271,8 @@ def identify_existing_board(
             "minimum_expected_marker_fraction_per_frame": 0.80,
             "requires_unique_dictionary": True,
             "requires_unique_orientation": True,
-            "requires_unique_legacy_pattern": True,
+            "requires_unique_legacy_pattern": False,
+            "requires_proven_legacy_equivalence_if_not_unique": True,
             "requires_unique_border_bits": True,
             "requires_marker_layout_consistency": True,
         },
@@ -269,8 +339,8 @@ def register_existing_board(
         print_pdf_sha256="0" * 64,
         source_type="existing_physical",
         physical_measurement={
-            "nominal_width_mm": _number(physical.get("nominal_width_mm"), "nominal_width_mm"),
-            "nominal_height_mm": _number(physical.get("nominal_height_mm"), "nominal_height_mm"),
+            "nominal_width_mm": candidate.board_width_m * 1000.0,
+            "nominal_height_mm": candidate.board_height_m * 1000.0,
             "square_length_mm": _number(physical.get("square_length_mm"), "square_length_mm"),
             "marker_length_mm": _number(physical.get("marker_length_mm"), "marker_length_mm"),
             "source": "user-provided-and-vision-verified",
@@ -427,7 +497,7 @@ def _evaluate_candidate(
     expected_set = set(expected_marker_ids)
     frames: list[dict[str, object]] = []
     for index, image in enumerate(images):
-        _corners, corner_ids, _marker_corners, marker_ids = detector.detectBoard(image)
+        _corners, corner_ids, marker_corners, marker_ids = detector.detectBoard(image)
         detected_markers = (
             tuple(int(value) for value in np.asarray(marker_ids).reshape(-1))
             if marker_ids is not None
@@ -439,11 +509,21 @@ def _evaluate_candidate(
             else ()
         )
         marker_fraction = len(expected_set.intersection(detected_markers)) / len(expected_set)
-        corner_layout_consistent = all(
+        corner_id_mapping_consistent = all(
             0 <= value < candidate.charuco_corner_count for value in detected_corners
         ) and len(set(detected_corners)) == len(detected_corners)
+        marker_layout = _spatial_marker_layout(
+            board=board,
+            marker_corners=marker_corners,
+            marker_ids=marker_ids,
+            image_shape=image.shape,
+            cv2=cv2,
+        )
         accepted = (
-            len(detected_corners) >= 20 and marker_fraction >= 0.80 and corner_layout_consistent
+            len(detected_corners) >= 20
+            and marker_fraction >= 0.80
+            and corner_id_mapping_consistent
+            and marker_layout["consistent"] is True
         )
         frames.append(
             {
@@ -452,7 +532,11 @@ def _evaluate_candidate(
                 "detected_charuco_corner_ids": list(detected_corners),
                 "detected_charuco_corners": len(detected_corners),
                 "expected_marker_fraction": marker_fraction,
-                "marker_layout_consistent": corner_layout_consistent,
+                "marker_layout_consistent": marker_layout["consistent"],
+                "marker_layout_inlier_fraction": marker_layout["inlier_fraction"],
+                "marker_layout_p95_error_px": marker_layout["p95_error_px"],
+                "marker_layout_threshold_px": marker_layout["threshold_px"],
+                "charuco_corner_id_mapping_consistent": corner_id_mapping_consistent,
                 "accepted": accepted,
             }
         )
@@ -494,26 +578,246 @@ def _evaluate_candidate(
     }
 
 
-def _ambiguity_reason(
+def _spatial_marker_layout(
+    *,
+    board: Any,
+    marker_corners: object,
+    marker_ids: object,
+    image_shape: tuple[int, ...],
+    cv2: Any,
+) -> dict[str, object]:
+    """Validate decoded marker IDs against their expected planar positions."""
+    threshold_px = max(3.0, 0.01 * float(np.hypot(image_shape[0], image_shape[1])))
+    if marker_ids is None or marker_corners is None:
+        return {
+            "consistent": False,
+            "inlier_fraction": 0.0,
+            "p95_error_px": None,
+            "threshold_px": threshold_px,
+        }
+    expected_ids = [int(value) for value in np.asarray(board.getIds()).reshape(-1)]
+    expected_points = np.asarray(board.getObjPoints(), dtype=np.float64)[:, :, :2]
+    expected_by_id = {
+        marker_id: expected_points[index] for index, marker_id in enumerate(expected_ids)
+    }
+    decoded_ids = [int(value) for value in np.asarray(marker_ids).reshape(-1)]
+    if len(set(decoded_ids)) != len(decoded_ids):
+        return {
+            "consistent": False,
+            "inlier_fraction": 0.0,
+            "p95_error_px": None,
+            "threshold_px": threshold_px,
+        }
+    observed_markers = np.asarray(marker_corners, dtype=np.float64).reshape(-1, 4, 2)
+    board_points: list[npt.NDArray[np.float64]] = []
+    image_points: list[npt.NDArray[np.float64]] = []
+    for marker_id, observed in zip(decoded_ids, observed_markers, strict=True):
+        if marker_id not in expected_by_id:
+            continue
+        observed_array = np.asarray(observed, dtype=np.float64).reshape(4, 2)
+        board_points.append(expected_by_id[marker_id])
+        image_points.append(observed_array)
+    if len(board_points) < 4:
+        return {
+            "consistent": False,
+            "inlier_fraction": 0.0,
+            "p95_error_px": None,
+            "threshold_px": threshold_px,
+        }
+    source = np.concatenate(board_points, axis=0)
+    destination = np.concatenate(image_points, axis=0)
+    homography, inliers = cv2.findHomography(
+        source,
+        destination,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=threshold_px,
+    )
+    if homography is None or inliers is None:
+        return {
+            "consistent": False,
+            "inlier_fraction": 0.0,
+            "p95_error_px": None,
+            "threshold_px": threshold_px,
+        }
+    projected = cv2.perspectiveTransform(
+        source.astype(np.float64).reshape(-1, 1, 2), homography
+    ).reshape(-1, 2)
+    errors = np.linalg.norm(projected - destination, axis=1)
+    inlier_fraction = float(np.mean(np.asarray(inliers).reshape(-1) != 0))
+    p95_error_px = float(np.quantile(errors, 0.95))
+    return {
+        "consistent": inlier_fraction >= 0.80 and p95_error_px <= threshold_px,
+        "inlier_fraction": inlier_fraction,
+        "p95_error_px": p95_error_px,
+        "threshold_px": threshold_px,
+    }
+
+
+def _equivalence_classes(
     passing: list[dict[str, object]],
+    candidate_by_key: Mapping[str, _Candidate],
+) -> list[dict[str, object]]:
+    """Group only candidates with identical OpenCV layout, geometry, and rendering."""
+    classes: list[dict[str, object]] = []
+    for item in sorted(passing, key=lambda value: str(value["candidate_key"])):
+        key = _string(item.get("candidate_key"), "candidate_key")
+        candidate = candidate_by_key[key]
+        for equivalence_class in classes:
+            representative_key = _string(
+                equivalence_class["representative_candidate_key"],
+                "representative_candidate_key",
+            )
+            proof = _candidate_equivalence_proof(
+                candidate_by_key[representative_key], candidate
+            )
+            if proof["equivalent"] is not True:
+                continue
+            member_keys = equivalence_class["candidate_keys"]
+            pairwise_proofs = equivalence_class["pairwise_proofs"]
+            equivalent_fields = equivalence_class["equivalent_candidate_fields"]
+            assert isinstance(member_keys, list)
+            assert isinstance(pairwise_proofs, list)
+            assert isinstance(equivalent_fields, list)
+            member_keys.append(key)
+            pairwise_proofs.append(proof)
+            differing_fields = proof["differing_candidate_fields"]
+            assert isinstance(differing_fields, list)
+            for field in differing_fields:
+                if field not in equivalent_fields:
+                    equivalent_fields.append(field)
+            equivalent_fields.sort()
+            break
+        else:
+            classes.append(
+                {
+                    "representative_candidate_key": key,
+                    "candidate_keys": [key],
+                    "equivalent_candidate_fields": [],
+                    "pairwise_proofs": [],
+                }
+            )
+    return classes
+
+
+def _candidate_equivalence_proof(
+    first: _Candidate,
+    second: _Candidate,
+) -> dict[str, object]:
+    """Prove equivalence; never treat legacy_pattern as inherently ignorable."""
+    candidate_fields = (
+        "dictionary",
+        "squares_x",
+        "squares_y",
+        "square_length_m",
+        "marker_length_m",
+        "border_bits",
+        "legacy_pattern",
+    )
+    differing_fields = [
+        field for field in candidate_fields if getattr(first, field) != getattr(second, field)
+    ]
+    first_board, _first_dictionary, _first_cv2 = create_board(first)
+    second_board, _second_dictionary, _second_cv2 = create_board(second)
+    resolution = (
+        first.squares_x * _EQUIVALENCE_RENDER_PIXELS_PER_SQUARE,
+        first.squares_y * _EQUIVALENCE_RENDER_PIXELS_PER_SQUARE,
+    )
+    first_render = np.asarray(
+        first_board.generateImage(resolution, marginSize=0, borderBits=first.border_bits),
+        dtype=np.uint8,
+    )
+    second_render = np.asarray(
+        second_board.generateImage(resolution, marginSize=0, borderBits=second.border_bits),
+        dtype=np.uint8,
+    )
+    checks = {
+        "same_identity_geometry_except_legacy_pattern": all(
+            field == "legacy_pattern" for field in differing_fields
+        ),
+        "marker_id_layout_equal": np.array_equal(
+            np.asarray(first_board.getIds()), np.asarray(second_board.getIds())
+        ),
+        "marker_corner_geometry_equal": np.array_equal(
+            np.asarray(first_board.getObjPoints()), np.asarray(second_board.getObjPoints())
+        ),
+        "chessboard_corner_geometry_equal": np.array_equal(
+            np.asarray(first_board.getChessboardCorners()),
+            np.asarray(second_board.getChessboardCorners()),
+        ),
+        "generated_images_binary": set(np.unique(first_render)).issubset({0, 255})
+        and set(np.unique(second_render)).issubset({0, 255}),
+        "generated_binary_board_image_equal": np.array_equal(first_render, second_render),
+        "canonical_corner_id_mapping_equal": canonical_corners_from_board(
+            first, first_board
+        )
+        == canonical_corners_from_board(second, second_board),
+    }
+    return {
+        "candidate_keys": [first.key, second.key],
+        "differing_candidate_fields": differing_fields,
+        "deterministic_resolution_px": [resolution[0], resolution[1]],
+        "rendered_binary_image_sha256": (
+            sha256_bytes(np.ascontiguousarray(first_render).tobytes())
+            if checks["generated_binary_board_image_equal"]
+            else None
+        ),
+        "checks": checks,
+        "equivalent": all(checks.values()) and differing_fields == ["legacy_pattern"],
+    }
+
+
+def _resolved_identity(
+    winner: dict[str, object], equivalence_class: dict[str, object]
+) -> dict[str, object]:
+    return {
+        "dictionary": winner["dictionary"],
+        "squares_x": winner["squares_x"],
+        "squares_y": winner["squares_y"],
+        "orientation": winner["orientation"],
+        "border_bits": winner["border_bits"],
+        "canonical_legacy_pattern": winner["legacy_pattern"],
+        "representative_candidate_key": equivalence_class["representative_candidate_key"],
+        "equivalent_candidate_fields": equivalence_class["equivalent_candidate_fields"],
+    }
+
+
+def _authoritative_dictionary_conflict(
+    *,
+    release_passing: list[dict[str, object]],
+    passing: list[dict[str, object]],
+    constraints: dict[str, object],
+) -> bool:
+    dictionary = constraints.get("dictionary")
+    return (
+        isinstance(dictionary, str)
+        and not passing
+        and bool(release_passing)
+        and all(item.get("dictionary") != dictionary for item in release_passing)
+    )
+
+
+def _ambiguity_reason(
+    equivalence_classes: list[dict[str, object]],
     evidence_count: int,
     gridboard: bool,
     release_source_count: int,
+    *,
+    dictionary_conflict: bool,
 ) -> str | None:
+    if dictionary_conflict:
+        return "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
     if gridboard:
         return "markers were detected without a ChArUco intersection/layout match"
     if evidence_count < 2:
         return "at least two evidence frames are required"
-    if len(passing) > 1:
-        fields = ("dictionary", "squares_x", "squares_y", "legacy_pattern", "border_bits")
-        ambiguous = [field for field in fields if len({item[field] for item in passing}) > 1]
-        return "multiple candidates remain indistinguishable: " + ", ".join(ambiguous)
-    if len(passing) == 1 and release_source_count < 2:
+    if len(equivalence_classes) > 1:
+        return "multiple non-equivalent candidate identity classes remain"
+    if len(equivalence_classes) == 1 and release_source_count < 2:
         return (
             "preliminary candidate only; final registration requires consistent evidence "
             "from at least two distinct capture-camera identities"
         )
-    if not passing:
+    if not equivalence_classes:
         return "no candidate met all marker-layout and ChArUco-corner gates"
     return None
 
@@ -533,8 +837,6 @@ def _authoritative_constraints(
         "orientation": orientation,
     }
     constrained = any(value is not None for value in values.values())
-    if constrained and source_path is None:
-        raise ContractError("authoritative candidate constraints require --authoritative-source")
     if source_path is not None and not constrained:
         raise ContractError("--authoritative-source requires at least one candidate constraint")
     if dictionary is not None and dictionary not in SUPPORTED_DICTIONARIES:
@@ -564,6 +866,9 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
         "evidence_frame_count",
         "distinct_capture_source_count",
         "winner",
+        "equivalent_candidate_fields",
+        "equivalence_classes",
+        "resolved_identity",
         "candidate_ranking",
         "acceptance",
         "software",
@@ -599,7 +904,9 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(evidence_value, list) or not evidence_value:
         raise ArtifactError("identification evidence must be a non-empty array")
     frame_evidence: list[dict[str, object]] = []
-    authoritative_count = 0
+    authoritative_source_count = 0
+    authoritative_user_metadata_count = 0
+    metadata_constraints: dict[str, object] | None = None
     source_ids: list[str | None] = []
     for index, item_value in enumerate(evidence_value):
         item = _object(item_value, f"evidence[{index}]")
@@ -639,7 +946,23 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
             if set(item) != {"kind", "sha256"}:
                 raise ArtifactError("authoritative evidence has missing or unknown fields")
             _digest_value(item.get("sha256"), f"evidence[{index}].sha256")
-            authoritative_count += 1
+            authoritative_source_count += 1
+        elif kind == "authoritative_user_metadata":
+            if set(item) != {"kind", "constraints", "sha256"}:
+                raise ArtifactError("authoritative user metadata has missing or unknown fields")
+            metadata_constraints = _object(
+                item.get("constraints"), f"evidence[{index}].constraints"
+            )
+            metadata_payload = json.dumps(
+                metadata_constraints,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            if _digest_value(item.get("sha256"), f"evidence[{index}].sha256") != sha256_bytes(
+                metadata_payload
+            ):
+                raise ArtifactError("authoritative user metadata digest is inconsistent")
+            authoritative_user_metadata_count += 1
         else:
             raise ArtifactError("identification evidence kind is unsupported")
     frame_count = _integer(report.get("evidence_frame_count"), "evidence_frame_count")
@@ -668,11 +991,25 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
         "landscape",
     }:
         raise ArtifactError("identification authoritative orientation is invalid")
-    expected_basis = "vision-and-authoritative-source" if constraints else "vision-only"
+    if authoritative_source_count and authoritative_user_metadata_count:
+        raise ArtifactError("identification mixes authoritative provenance modes")
+    expected_basis = (
+        "vision-and-authoritative-source"
+        if authoritative_source_count
+        else "vision-and-authoritative-user-metadata"
+        if constraints
+        else "vision-only"
+    )
     if report.get("identification_basis") != expected_basis:
         raise ArtifactError("identification basis is inconsistent")
-    if authoritative_count != (1 if constraints else 0):
+    if authoritative_source_count != (1 if expected_basis.endswith("source") else 0):
         raise ArtifactError("identification authoritative-source evidence is inconsistent")
+    if authoritative_user_metadata_count != (
+        1 if expected_basis.endswith("user-metadata") else 0
+    ):
+        raise ArtifactError("identification authoritative user metadata is inconsistent")
+    if authoritative_user_metadata_count and metadata_constraints != constraints:
+        raise ArtifactError("identification authoritative user metadata differs from constraints")
 
     acceptance = _object(report.get("acceptance"), "acceptance")
     if acceptance != {
@@ -682,7 +1019,8 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
         "minimum_expected_marker_fraction_per_frame": 0.80,
         "requires_unique_dictionary": True,
         "requires_unique_orientation": True,
-        "requires_unique_legacy_pattern": True,
+        "requires_unique_legacy_pattern": False,
+        "requires_proven_legacy_equivalence_if_not_unique": True,
         "requires_unique_border_bits": True,
         "requires_marker_layout_consistency": True,
     }:
@@ -782,28 +1120,79 @@ def _validated_unique_winner(report: Mapping[str, object]) -> dict[str, object]:
             for item in ranking
         )
     )
-    unique = len(passing) == 1
+    equivalence_classes = _equivalence_classes(constrained_vision, expected_candidates)
+    if report.get("equivalence_classes") != equivalence_classes:
+        raise ArtifactError("identification equivalence classes are inconsistent")
+    equivalent_fields_set: set[str] = set()
+    for equivalence_class in equivalence_classes:
+        fields = equivalence_class["equivalent_candidate_fields"]
+        assert isinstance(fields, list)
+        equivalent_fields_set.update(str(field) for field in fields)
+    equivalent_candidate_fields = sorted(equivalent_fields_set)
+    if report.get("equivalent_candidate_fields") != equivalent_candidate_fields:
+        raise ArtifactError("identification equivalent candidate fields are inconsistent")
+    release_keys = {str(item["candidate_key"]) for item in passing}
+    release_classes: list[dict[str, object]] = []
+    for equivalence_class in equivalence_classes:
+        candidate_keys = equivalence_class["candidate_keys"]
+        assert isinstance(candidate_keys, list)
+        if set(candidate_keys).issubset(release_keys):
+            release_classes.append(equivalence_class)
+    dictionary_conflict = _authoritative_dictionary_conflict(
+        release_passing=release_passing,
+        passing=passing,
+        constraints=constraints,
+    )
+    unique = len(equivalence_classes) == 1 and len(release_classes) == 1
     expected_classification = (
-        "ARUCO_GRIDBOARD_NOT_CHARUCO"
+        "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
+        if dictionary_conflict
+        else "ARUCO_GRIDBOARD_NOT_CHARUCO"
         if gridboard
         else "CHARUCO_EXISTING_PHYSICAL"
         if unique
         else "UNRESOLVED_CHARUCO_CANDIDATE"
     )
     if (
-        report.get("status") != ("PASS" if unique else "PAUSED_FOR_USER_VALIDATION")
+        report.get("status")
+        != (
+            "FAIL"
+            if dictionary_conflict
+            else "PASS"
+            if unique
+            else "PAUSED_FOR_USER_VALIDATION"
+        )
         or report.get("classification") != expected_classification
         or report.get("candidate_uniqueness") is not unique
     ):
         raise ArtifactError("identification conclusion is inconsistent with candidate evidence")
-    expected_winner = dict(passing[0]) if unique else None
+    expected_winner = (
+        dict(
+            next(
+                item
+                for item in passing
+                if item["candidate_key"]
+                == release_classes[0]["representative_candidate_key"]
+            )
+        )
+        if unique
+        else None
+    )
     if report.get("winner") != expected_winner:
         raise ArtifactError("identification winner is inconsistent with candidate ranking")
+    expected_resolved_identity = (
+        _resolved_identity(expected_winner, release_classes[0])
+        if expected_winner is not None
+        else None
+    )
+    if report.get("resolved_identity") != expected_resolved_identity:
+        raise ArtifactError("identification resolved identity is inconsistent")
     if report.get("ambiguity_reason") != _ambiguity_reason(
-        passing if passing else constrained_vision,
+        equivalence_classes,
         frame_count,
         gridboard,
         distinct_sources,
+        dictionary_conflict=dictionary_conflict,
     ):
         raise ArtifactError("identification ambiguity reason is inconsistent")
     if not unique or expected_winner is None:
@@ -849,6 +1238,10 @@ def _validated_candidate_entry(
             "detected_charuco_corners",
             "expected_marker_fraction",
             "marker_layout_consistent",
+            "marker_layout_inlier_fraction",
+            "marker_layout_p95_error_px",
+            "marker_layout_threshold_px",
+            "charuco_corner_id_mapping_consistent",
             "accepted",
         }:
             raise ArtifactError("candidate frame has missing or unknown fields")
@@ -871,7 +1264,38 @@ def _validated_candidate_entry(
         if not 0.0 <= fraction <= 1.0:
             raise ArtifactError("candidate marker fraction lies outside [0, 1]")
         layout = _boolean(frame.get("marker_layout_consistent"), "marker layout")
-        expected_accepted = corner_count >= 20 and fraction >= 0.80 and layout
+        inlier_fraction = _number(
+            frame.get("marker_layout_inlier_fraction"), "marker layout inlier fraction"
+        )
+        if not 0.0 <= inlier_fraction <= 1.0:
+            raise ArtifactError("candidate marker layout inlier fraction lies outside [0, 1]")
+        threshold_px = _number(
+            frame.get("marker_layout_threshold_px"), "marker layout threshold"
+        )
+        if threshold_px <= 0.0:
+            raise ArtifactError("candidate marker layout threshold must be positive")
+        p95_value = frame.get("marker_layout_p95_error_px")
+        p95_error_px = (
+            None
+            if p95_value is None
+            else _number(p95_value, "marker layout p95 error")
+        )
+        if p95_error_px is not None and p95_error_px < 0.0:
+            raise ArtifactError("candidate marker layout error must be non-negative")
+        expected_layout = (
+            p95_error_px is not None
+            and inlier_fraction >= 0.80
+            and p95_error_px <= threshold_px
+        )
+        if layout is not expected_layout:
+            raise ArtifactError("candidate marker layout conclusion is inconsistent")
+        corner_mapping = _boolean(
+            frame.get("charuco_corner_id_mapping_consistent"),
+            "ChArUco corner ID mapping",
+        )
+        expected_accepted = (
+            corner_count >= 20 and fraction >= 0.80 and layout and corner_mapping
+        )
         if frame.get("accepted") is not expected_accepted:
             raise ArtifactError("candidate frame acceptance is inconsistent")
         accepted.append(expected_accepted)

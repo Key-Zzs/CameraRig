@@ -31,6 +31,9 @@ from camera_rig.targets.charuco.generator import generate_target_artifact
 from camera_rig.targets.charuco.geometry import create_board
 from camera_rig.targets.charuco.identification import (
     ExistingBoardDimensions,
+    _Candidate,
+    _candidate_equivalence_proof,
+    _spatial_marker_layout,
     identify_existing_board,
     register_existing_board,
 )
@@ -191,18 +194,133 @@ def test_v2_custom_page_generates_and_validates_without_changing_v1(tmp_path: Pa
     }
 
 
-def test_odd_row_legacy_pattern_ambiguity_fails_closed(
-    generated_charuco_target: Path, tmp_path: Path
+def test_odd_row_legacy_candidates_fold_by_proven_equivalence_and_register(
+    tmp_path: Path,
 ) -> None:
-    board = generated_charuco_target / "charuco_a4_v1_board.png"
+    generated = tmp_path / "generated"
+    generate_target_artifact(
+        load_charuco_target_spec(
+            _v2_config(
+                tmp_path / "target.yaml",
+                squares_x=5,
+                squares_y=7,
+                dictionary="DICT_4X4_100",
+            )
+        ),
+        generated,
+    )
+    board = cv2.imread(str(generated / "custom_even_board_board.png"), cv2.IMREAD_GRAYSCALE)
+    assert board is not None
+    captures = (
+        _write_identification_capture(
+            tmp_path / "capture_a", board, camera_name="camera_a", serial="source-a"
+        ),
+        _write_identification_capture(
+            tmp_path / "capture_b", board, camera_name="camera_b", serial="source-b"
+        ),
+    )
+    identification = tmp_path / "identification.json"
     report = identify_existing_board(
-        image_paths=(board, board),
+        artifact_paths=captures,
+        dimensions=ExistingBoardDimensions(210.0, 150.0, 30.0, 22.0),
+        output=identification,
+        authoritative_dictionary="DICT_4X4_100",
+    )
+    assert report["status"] == "PASS"
+    assert report["candidate_uniqueness"] is True
+    assert report["identification_basis"] == "vision-and-authoritative-user-metadata"
+    assert report["equivalent_candidate_fields"] == ["legacy_pattern"]
+    equivalence_classes = report["equivalence_classes"]
+    assert isinstance(equivalence_classes, list) and len(equivalence_classes) == 1
+    equivalence_class = equivalence_classes[0]
+    assert len(equivalence_class["candidate_keys"]) == 2
+    assert equivalence_class["equivalent_candidate_fields"] == ["legacy_pattern"]
+    proof = equivalence_class["pairwise_proofs"][0]
+    assert proof["equivalent"] is True
+    assert all(proof["checks"].values())
+    resolved = report["resolved_identity"]
+    assert resolved["dictionary"] == "DICT_4X4_100"
+    assert resolved["orientation"] == "portrait"
+    assert resolved["canonical_legacy_pattern"] is False
+    registered = tmp_path / "registered"
+    register_existing_board(
+        identification_path=identification,
+        target_name="future_existing_board",
+        target_frame="charuco_target",
+        output=registered,
+    )
+    target = validate_target_artifact(registered / "target_spec.json")
+    assert target.dictionary == "DICT_4X4_100"
+    assert target.legacy_pattern is False
+
+
+def test_non_equivalent_legacy_candidates_do_not_fold() -> None:
+    first = _Candidate("DICT_4X4_100", 6, 6, 0.1, 0.075, 1, False)
+    second = _Candidate("DICT_4X4_100", 6, 6, 0.1, 0.075, 1, True)
+    proof = _candidate_equivalence_proof(first, second)
+    assert proof["equivalent"] is False
+    assert proof["checks"]["marker_corner_geometry_equal"] is False
+    assert proof["checks"]["generated_binary_board_image_equal"] is False
+
+
+def test_wrong_authoritative_dictionary_reports_visual_conflict(tmp_path: Path) -> None:
+    generated = tmp_path / "generated"
+    generate_target_artifact(
+        load_charuco_target_spec(
+            _v2_config(
+                tmp_path / "target.yaml",
+                squares_x=5,
+                squares_y=7,
+                dictionary="DICT_5X5_100",
+            )
+        ),
+        generated,
+    )
+    board = cv2.imread(str(generated / "custom_even_board_board.png"), cv2.IMREAD_GRAYSCALE)
+    assert board is not None
+    report = identify_existing_board(
+        artifact_paths=(
+            _write_identification_capture(
+                tmp_path / "capture_a", board, camera_name="camera_a", serial="source-a"
+            ),
+            _write_identification_capture(
+                tmp_path / "capture_b", board, camera_name="camera_b", serial="source-b"
+            ),
+        ),
         dimensions=ExistingBoardDimensions(210.0, 150.0, 30.0, 22.0),
         output=tmp_path / "identification.json",
+        authoritative_dictionary="DICT_4X4_100",
     )
-    assert report["status"] == "PAUSED_FOR_USER_VALIDATION"
-    assert report["candidate_uniqueness"] is False
-    assert "legacy_pattern" in str(report["ambiguity_reason"])
+    assert report["status"] == "FAIL"
+    assert (
+        report["classification"]
+        == "USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE"
+    )
+    assert report["winner"] is None
+
+
+def test_spatial_marker_id_layout_rejects_permuted_ids() -> None:
+    candidate = _Candidate("DICT_4X4_100", 5, 7, 0.1, 0.075, 1, False)
+    board, _dictionary, _cv2 = create_board(candidate)
+    marker_corners = np.asarray(board.getObjPoints(), dtype=np.float64)[:, :, :2] * 500.0
+    marker_corners += np.array([200.0, 100.0])
+    marker_ids = np.asarray(board.getIds(), dtype=np.int32).reshape(-1, 1)
+    valid = _spatial_marker_layout(
+        board=board,
+        marker_corners=marker_corners,
+        marker_ids=marker_ids,
+        image_shape=(1000, 1000),
+        cv2=cv2,
+    )
+    assert valid["consistent"] is True
+    invalid = _spatial_marker_layout(
+        board=board,
+        marker_corners=marker_corners,
+        marker_ids=np.roll(marker_ids, 1, axis=0),
+        image_shape=(1000, 1000),
+        cv2=cv2,
+    )
+    assert invalid["consistent"] is False
 
 
 def test_even_row_board_is_uniquely_identified_and_registered(tmp_path: Path) -> None:
