@@ -32,7 +32,12 @@ decision, conditional local covariance, worst-axis translation/rotation standard
 IPPE alternative-candidate ambiguity diagnostic. Capture acceptance uses robust solve/observable
 ratios and uncertainty distributions rather than requiring every frame to pass. Fixed calibration
 requires both a minimum per-frame observable ratio and observability of the final shared pose, in
-addition to the existing reprojection, repeatability, split-half, and native-depth gates.
+addition to a separate gross model-consistency reprojection gate, repeatability, split-half, and
+native-depth gates. The historical precision thresholds remain unchanged for `legacy_strict` and
+`pose_validated`; `uncertainty_validated` instead persists independent 1.5 px RMSE and 2.0 px p95
+gross limits because its residual SSE already enters the conditional covariance pixel-noise model.
+Residual vector-field structure is persisted for threshold evidence and diagnosis but is not a hard
+gate.
 
 OpenCV's analytic Jacobian is with respect to additive Rodrigues-vector coordinates. After stable
 SVD covariance recovery, CameraRig maps the full covariance through the SO(3) left Jacobian and

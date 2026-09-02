@@ -107,18 +107,25 @@ camera-rig target validate-artifact \
   --overlays .local/overlays/target-validation
 ```
 
-使用一个严格 YAML 配置固定 D435i；也可以先查看不会打开相机的完整执行计划：
+使用一个严格 YAML 配置固定 D435i。非硬件 `--dry-run` 只检查输入和依赖；live viability
+preflight 会打开相机并复用 `provision fixed` 的采集、逐帧 gate、共享位姿求解和最终质量 evaluator，
+但绝不发布 bundle 或 fixed provision：
 
 ```bash
 camera-rig provision fixed \
   --config .local/configs/fixed_provision.yaml \
   --output .local/artifacts/fixed_camera \
   --dry-run
-camera-rig provision fixed \
+camera-rig provision preflight \
   --config .local/configs/fixed_provision.yaml \
-  --output .local/artifacts/fixed_camera
-camera-rig provision validate \
-  --artifact .local/artifacts/fixed_camera
+  --report .local/reports/fixed-provision-preflight.json \
+  --overlays .local/overlays/fixed-provision-preflight
+if camera-rig provision fixed \
+    --config .local/configs/fixed_provision.yaml \
+    --output .local/artifacts/fixed_camera; then
+  camera-rig provision validate \
+    --artifact .local/artifacts/fixed_camera
+fi
 ```
 
 固定相机工作流把 `workspace` 明确定义为持久化的 ChArUco 目标板坐标系，并在验证通过的
@@ -130,9 +137,16 @@ camera-rig provision validate \
 
 新的固定相机部署推荐设置 `target.detection_policy: uncertainty_validated`。coverage 仍用于操作员
 引导和标定板尺寸诊断，但 coverage 不等于位姿精度，在此策略中也不是硬门槛。核心验收改为检测
-完整性、PnP、缩放 Jacobian 可观测性、有界条件位姿不确定度、平面位姿歧义、重投影、时间重复性、
-split-half 稳定性和原生深度 sanity。低 coverage 并不保证 PASS；它只是不再因 coverage 数值本身
+完整性、PnP、gross model-consistency 重投影门、缩放 Jacobian 可观测性、有界条件位姿不确定度、
+平面位姿歧义、时间重复性、split-half 稳定性和原生深度 sanity。重投影残差已经进入 covariance 的
+像素噪声估计，因此 `uncertainty_validated` 不会再把 legacy 0.5/1.0 px precision 阈值作为 primary
+hard gate；当前 1.5/2.0 px gross RMSE/p95 候选门仍会拒绝明显投影模型不一致。残差向量场仅作诊断。
+低 coverage 并不保证 PASS；它只是不再因 coverage 数值本身
 拒绝一个实际可观的位姿。`legacy_strict` 与 `pose_validated` 的历史语义保持不变。
+
+target preflight 与 provision preflight 回答不同问题。前者 PASS 只说明目标检测与位姿可观测，
+不保证 raw-stream、fixed-frame 数量/比例、最终重投影、重复性、split-half 或原生深度会通过。
+推荐顺序为 `target preflight -> provision preflight -> provision fixed -> provision validate`。
 
 当 D435i 因机械臂工作空间避障必须放在较远位置或倾斜观察时，该策略尤其适合 500 x 700 mm、
 5 x 7、100 mm 方格、75 mm marker、`DICT_4X4_50` 大板。但大板不会自动 PASS：marker 像素

@@ -112,19 +112,26 @@ camera-rig target validate-artifact \
   --overlays .local/overlays/target-validation
 ```
 
-Provision a fixed D435i from one strict YAML contract, or inspect the complete plan
-without opening the camera:
+Provision a fixed D435i from one strict YAML contract. The non-hardware `--dry-run`
+checks only inputs and dependencies; the live viability preflight opens the camera and
+runs the same acquisition, frame gates, shared-pose solve, and final quality evaluator as
+`provision fixed`, but never publishes a bundle or fixed provision:
 
 ```bash
 camera-rig provision fixed \
   --config .local/configs/fixed_provision.yaml \
   --output .local/artifacts/fixed_camera \
   --dry-run
-camera-rig provision fixed \
+camera-rig provision preflight \
   --config .local/configs/fixed_provision.yaml \
-  --output .local/artifacts/fixed_camera
-camera-rig provision validate \
-  --artifact .local/artifacts/fixed_camera
+  --report .local/reports/fixed-provision-preflight.json \
+  --overlays .local/overlays/fixed-provision-preflight
+if camera-rig provision fixed \
+    --config .local/configs/fixed_provision.yaml \
+    --output .local/artifacts/fixed_camera; then
+  camera-rig provision validate \
+    --artifact .local/artifacts/fixed_camera
+fi
 ```
 
 The fixed workflow defines `workspace` as the persisted ChArUco target frame and emits
@@ -138,10 +145,20 @@ pose repeatability rather than recalibrating intrinsics. See
 For new fixed-camera deployments, `target.detection_policy: uncertainty_validated` is recommended.
 Coverage is still reported as operator guidance and a target-size warning, but it is not pose
 accuracy and is not a hard gate in this policy. Acceptance instead requires detection integrity,
-PnP, scaled-Jacobian observability, bounded conditional pose uncertainty, resolved planar-pose
-ambiguity, reprojection, temporal repeatability, split-half stability, and native-depth sanity.
+PnP, a gross model-consistency reprojection gate, scaled-Jacobian observability, bounded
+conditional pose uncertainty, resolved planar-pose ambiguity, temporal repeatability,
+split-half stability, and native-depth sanity. Reprojection residuals already determine the
+pixel-noise estimate used by covariance, so the legacy 0.5/1.0 px precision thresholds are not
+applied again as primary hard gates under `uncertainty_validated`; current 1.5/2.0 px gross
+RMSE/p95 limits reject clearly inconsistent projection models. Residual vector fields remain
+diagnostic-only.
 Low coverage does not guarantee a pass; it only stops coverage alone from rejecting an otherwise
 well-observed pose. `legacy_strict` and `pose_validated` retain their historical behavior.
+
+Target preflight and provision preflight answer different questions. A passing target preflight
+establishes target detection and pose observability; it does not guarantee that raw-stream,
+fixed-frame count/ratio, final reprojection, repeatability, split-half, or native-depth gates will
+pass. Use `target preflight -> provision preflight -> provision fixed -> provision validate`.
 
 The policy is especially useful for the 500 x 700 mm, 5 x 7, 100 mm-square, 75 mm-marker,
 `DICT_4X4_50` board when a D435i must remain outside the robot workspace or view it obliquely.

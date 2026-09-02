@@ -4,7 +4,8 @@ CameraRig separates artifact validity from numerical calibration acceptance. A v
 JSON file can still describe failed evidence; a final fixed CameraBundle is emitted only
 when every required check passes.
 
-The default fixed-camera gates are:
+The legacy fixed-camera precision gates (unchanged for `legacy_strict` and
+`pose_validated`) are:
 
 | Check | Limit |
 | --- | ---: |
@@ -20,11 +21,15 @@ The default fixed-camera gates are:
 | Native-depth median absolute error | at most 20 mm |
 | Native-depth p95 absolute error | at most 40 mm |
 
-The frozen `uncertainty_validated_v1` additions are:
+The current `uncertainty_validated_v1` thresholds are:
 
 | Check | Limit |
 | --- | ---: |
 | Pixel-noise floor | 0.25 px |
+| Gross per-frame reprojection RMSE | at most 1.5 px |
+| Gross per-frame reprojection p95 | at most 2.0 px |
+| Gross final reprojection RMSE | at most 1.5 px |
+| Gross final reprojection p95 | at most 2.0 px |
 | Per-frame worst-axis translation std | at most 5.0 mm |
 | Per-frame worst-axis rotation std | at most 2.0 deg |
 | Final-pose worst-axis translation std | at most 2.0 mm |
@@ -36,14 +41,28 @@ The frozen `uncertainty_validated_v1` additions are:
 | Competitive alternative delta chi-square | below 9.0 is competitive |
 | Material alternative separation | at least 5 mm or 5 deg |
 
-These values were frozen after the metric-only implementation, not copied into that
-implementation in advance. The deterministic release sweep contains 2,304 fully visible
+The observability, uncertainty, and ambiguity values were frozen after the metric-only
+implementation, not copied into that implementation in advance. The gross-reprojection rows
+remain release candidates until the synthetic evidence is reviewed together with fresh A/B/C
+camera evidence. The deterministic observability release sweep contains 2,304 fully visible
 configurations over 40 mm and 100 mm square lengths, 0.8--4.5 m range, 0--80 degree tilt,
 center/edge/corner placement, three corner distributions, and 0.1--1.0 px noise. The 100 mm
 case represents the 5-by-7, 500-by-700 mm deployment board. The sweep brackets the three
 numerical limits directly: translation has cases at 4.995/5.004 mm, rotation at
 1.990/2.002 deg, and scaled condition at 99.83/100.16. It contains 1,034 passes, 1,270
 fails, and 583 statistically competitive, materially distinct planar alternatives.
+
+The independent gross-reprojection release candidate is evaluated with a 45-case sweep:
+nine injected vector RMSE levels (0.1, 0.25, 0.5, 0.6, 0.75, 1.0, 1.5, 2.0, and 3.0 px)
+across Gaussian, Brown-Conrady radial and tangential, projected 3-D board-warp, and local corner
+cluster corruption fields. Each row records post-fit residuals, uncertainty, observability,
+ground-truth pose error, robust tail summaries, and low-order board-coordinate polynomial
+structure. It also
+evaluates a 7-by-6 grid of candidate RMSE/p95 threshold pairs rather than reporting only the
+implemented candidate. The 1.5/2.0 candidate is not fitted to one camera maximum; it must not be
+called frozen until real A/B/C residual fields and margins have been reviewed. Highly absorbable
+structured fields must still pass observability, repeatability, split-half, and native-depth
+evidence; the vector-field report remains diagnostic-only in this version.
 
 The 0.25 px floor is deliberately conservative relative to the seven accepted/replayed
 real captures (temporal-jitter p95 0.026--0.033 px) and is independently checked by the
@@ -87,8 +106,9 @@ and per-corner-ID distributions. Thresholds and the pose-outlier policy are pers
 the calibration artifact.
 
 Native depth may be `SKIPPED_WITH_WARNING` only when the configured depth camera model
-cannot be projected safely. It is never fabricated as a pass. A supported projection
-model with insufficient or inaccurate depth samples fails its diagnostic.
+cannot be projected safely and the target is generated. An existing physical target requires a
+real `PASS`; unsupported projection, insufficient samples, or inaccurate depth fails its
+provision quality. A skipped diagnostic is never fabricated as a pass.
 
 Diagnostic overlays show detected points and IDs, reprojected points, residual vectors,
 the projected outer boundary, and the canonical target axes. The best, median-quality,

@@ -34,6 +34,18 @@ has no covariance and fails closed. The gate uses worst-axis translation and rot
 deviations. After joint refinement, the complete inlier correspondence set is evaluated again as
 the final shared pose; frame count cannot hide a poor observable-frame ratio.
 
+The legacy 0.5 px RMSE and 1.0 px p95 precision limits remain hard per-frame and final gates for
+`legacy_strict` and `pose_validated`. Under `uncertainty_validated`, residual SSE already sets
+`sigma_px = max(0.25, sqrt(SSE / (2N - 6)))` and therefore propagates into pose covariance. The
+legacy precision limit is not applied a second time. A separate gross model-consistency gate uses
+1.5 px RMSE and 2.0 px p95 limits at both frame and final scope. These limits are intentionally
+separate persisted fields in `uncertainty_validated_v1`, not rewritten fixed-config values.
+
+Each solved frame also persists observed/projected UV, du/dv, residual norm, normalized-radius
+bins, Pearson/Spearman trends, and quadrant vector statistics. These vector-field measurements help
+distinguish random subpixel localization noise from radial, tangential, warp-like, or localized
+model mismatch. They are diagnostic-only and do not silently introduce a new hard gate.
+
 This covariance is conditional local pose uncertainty with fixed K/D, fixed target geometry,
 correct associations, and a local Gaussian pixel approximation. It is not absolute calibration
 uncertainty and excludes target warp/print scale, factory-intrinsic uncertainty, factory
