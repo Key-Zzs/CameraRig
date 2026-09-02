@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -13,19 +14,25 @@ from camera_rig.artifacts.target_detection import (
     TargetDetectionFrame,
     write_target_detection,
 )
+from camera_rig.calibration.fixed.calibrator import FixedCameraCalibrator
 from camera_rig.calibration.fixed.config import (
     FixedCalibrationConfig,
     FixedSolverThresholds,
 )
-from camera_rig.calibration.pose import project_points_px
+from camera_rig.calibration.pose import (
+    PlanarPoseEstimator,
+    UncertaintyValidatedThresholds,
+    project_points_px,
+)
 from camera_rig.config.models import (
     CameraConfig,
     CameraSettings,
     CaptureSettings,
     StreamSettings,
 )
+from camera_rig.config.validation import validate_against_named_schema
 from camera_rig.core.device_info import CameraDeviceInfo
-from camera_rig.core.errors import ContractError
+from camera_rig.core.errors import ContractError, SchemaValidationError
 from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame, StreamFrame
 from camera_rig.core.intrinsics import CameraIntrinsics
@@ -38,6 +45,7 @@ from camera_rig.provision.config import (
     ProvisionConfig,
     ProvisionTargetSettings,
 )
+from camera_rig.provision.preflight import run_fixed_provision_preflight
 from camera_rig.provision.workflow import (
     ProvisionWorkflowDependencies,
     run_fixed_provision_workflow,
@@ -258,6 +266,10 @@ class _FakeDetector:
                 _known_pose(target.target_frame, x_offset_m=x_offset),
                 _intrinsics(stream),
             )
+            if self.mode == "reprojection" and index % 5 == 0:
+                pixels = pixels + np.random.default_rng(4000 + index).normal(
+                    0.0, 0.65, pixels.shape
+                )
             observation = TargetObservation(
                 plugin_name=target.plugin,
                 target_frame=target.target_frame,
@@ -438,3 +450,348 @@ def test_fixed_provision_workflow_fails_closed(
     assert not (staging / "calibration/fixed_calibration.json").exists()
     if mode == "repeatability":
         assert (staging / "calibration/fixed_calibration.failed.json").is_file()
+
+
+def test_live_preflight_reuses_workflow_and_never_publishes(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+) -> None:
+    config = _config(generated_charuco_target)
+    dependencies, session, detector = _dependencies(config)
+    report = tmp_path / "preflight.json"
+    overlays = tmp_path / "preflight-overlays"
+
+    value = run_fixed_provision_preflight(
+        config,
+        report=report,
+        overlays=overlays,
+        dependencies=dependencies,
+    )
+
+    assert value["schema_version"] == "camera-rig.fixed-provision-preflight.v1"
+    assert value["status"] == "PASS"
+    assert value["would_publish_fixed_provision"] is True
+    assert value["evaluation_core"] == "run_fixed_provision_workflow"
+    assert value["publication"] == {
+        "camera_bundle_written": False,
+        "fixed_provision_written": False,
+        "canonical_output_modified": False,
+    }
+    assert value["raw_stream"]["status"] == "PASS"  # type: ignore[index]
+    assert value["fixed_pose_frames"]["frame_gate_accepted"] == 60  # type: ignore[index]
+    assert len(value["per_frame"]) == 60  # type: ignore[arg-type]
+    assert report.is_file()
+    assert (overlays / "fixed_calibration").is_dir()
+    assert not any(path.name == "camera_bundle.json" for path in tmp_path.rglob("*"))
+    assert (session.enter_count, session.exit_count, session.capture_count) == (1, 1, 300)
+    assert detector.call_count == 1
+    invalid = deepcopy(value)
+    invalid["pose_policy"] = "uncertainty_validated"
+    invalid["observability"] = {"status": "NOT_EVALUATED"}
+    invalid["final"]["final_pose_observability"] = None  # type: ignore[index]
+    with pytest.raises(SchemaValidationError):
+        validate_against_named_schema(
+            invalid,  # type: ignore[arg-type]
+            "fixed_provision_preflight.v1.schema.json",
+        )
+
+
+def test_live_preflight_rolls_back_overlays_when_report_publication_fails(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(generated_charuco_target)
+    dependencies, _session, _detector = _dependencies(config)
+    report = tmp_path / "preflight.json"
+    overlays = tmp_path / "preflight-overlays"
+    monkeypatch.setattr(
+        "camera_rig.provision.preflight.atomic_write_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("synthetic report failure")),
+    )
+    with pytest.raises(OSError, match="synthetic report failure"):
+        run_fixed_provision_preflight(
+            config,
+            report=report,
+            overlays=overlays,
+            dependencies=dependencies,
+        )
+    assert not report.exists()
+    assert not overlays.exists()
+
+
+def test_live_preflight_and_actual_workflow_have_offline_deterministic_parity(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+) -> None:
+    config = _config(generated_charuco_target)
+    actual_dependencies, _actual_session, _actual_detector = _dependencies(config)
+    actual = run_fixed_provision_workflow(
+        config,
+        tmp_path / "actual-evaluation",
+        dependencies=actual_dependencies,
+    )
+    preflight_dependencies, _preflight_session, _preflight_detector = _dependencies(config)
+    preflight = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / "preflight-parity.json",
+        overlays=tmp_path / "preflight-parity-overlays",
+        dependencies=preflight_dependencies,
+    )
+
+    actual_decisions = [
+        (
+            item["frame_index"],
+            item["accepted"],
+            item["failure_reasons"],
+            item["reprojection_decision"],
+        )
+        for item in actual.fixed_calibration.per_frame_pose_summary
+    ]
+    preflight_decisions = [
+        (
+            item["frame_index"],
+            item["accepted"],
+            item["failure_reasons"],
+            item["reprojection_decision"],
+        )
+        for item in preflight["per_frame"]  # type: ignore[union-attr]
+    ]
+    assert preflight_decisions == actual_decisions
+    assert preflight["final"]["decision"] == "WOULD_PASS"  # type: ignore[index]
+    assert actual.fixed_calibration.quality.passed is True
+
+
+@pytest.mark.parametrize("mode", ["reprojection", "repeatability"])
+def test_live_preflight_and_actual_workflow_have_failed_final_decision_parity(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    config = _config(generated_charuco_target)
+    actual_dependencies, _actual_session, _actual_detector = _dependencies(config, mode=mode)
+    actual = run_fixed_provision_workflow(
+        config,
+        tmp_path / f"{mode}-actual",
+        dependencies=actual_dependencies,
+        allow_failed_quality=True,
+    )
+    preflight_dependencies, _preflight_session, _preflight_detector = _dependencies(
+        config, mode=mode
+    )
+    preflight = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / f"{mode}-parity.json",
+        overlays=tmp_path / f"{mode}-parity-overlays",
+        dependencies=preflight_dependencies,
+    )
+
+    actual_decisions = [
+        (
+            item["frame_index"],
+            item["accepted"],
+            item["failure_reasons"],
+            item["reprojection_decision"],
+        )
+        for item in actual.fixed_calibration.per_frame_pose_summary
+    ]
+    preflight_decisions = [
+        (
+            item["frame_index"],
+            item["accepted"],
+            item["failure_reasons"],
+            item["reprojection_decision"],
+        )
+        for item in preflight["per_frame"]  # type: ignore[union-attr]
+    ]
+    assert preflight_decisions == actual_decisions
+    assert preflight["failure_reasons"] == list(actual.fixed_calibration.quality.failure_reasons)
+    assert preflight["final"]["decision"] == "WOULD_FAIL"  # type: ignore[index]
+    assert actual.fixed_calibration.quality.passed is False
+
+
+def test_existing_physical_native_depth_skip_fails_actual_and_preflight_equally(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+) -> None:
+    config = _config(generated_charuco_target)
+
+    class ExistingPhysicalCalibrator:
+        def calibrate(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            kwargs["print_provenance"] = {
+                "source_type": "existing_physical",
+                "physical_measurement_sha256": "d" * 64,
+                "geometry_policy": "registered physical target",
+            }
+            kwargs["native_depth_evaluator"] = lambda _pose, _indices: {
+                "status": "SKIPPED_WITH_WARNING",
+                "warning": "synthetic unsupported projection",
+            }
+            return FixedCameraCalibrator().calibrate(*args, **kwargs)
+
+    actual_dependencies, _session, _detector = _dependencies(config)
+    actual_dependencies = replace(
+        actual_dependencies,
+        fixed_calibrator_factory=ExistingPhysicalCalibrator,
+    )
+    actual = run_fixed_provision_workflow(
+        config,
+        tmp_path / "existing-actual",
+        dependencies=actual_dependencies,
+        allow_failed_quality=True,
+    )
+    assert actual.fixed_calibration.quality.passed is False
+    assert "native_depth_sanity" in actual.fixed_calibration.quality.failure_reasons
+
+    preflight_dependencies, _session, _detector = _dependencies(config)
+    preflight_dependencies = replace(
+        preflight_dependencies,
+        fixed_calibrator_factory=ExistingPhysicalCalibrator,
+    )
+    preflight = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / "existing-preflight.json",
+        overlays=tmp_path / "existing-preflight-overlays",
+        dependencies=preflight_dependencies,
+    )
+    assert preflight["status"] == "FAIL"
+    assert preflight["would_publish_fixed_provision"] is False
+    assert preflight["failure_reasons"] == list(actual.fixed_calibration.quality.failure_reasons)
+
+
+def test_live_preflight_and_actual_workflow_have_raw_failure_parity(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+) -> None:
+    config = _config(generated_charuco_target)
+    actual_staging = tmp_path / "stream-actual"
+    actual_dependencies, _actual_session, _actual_detector = _dependencies(
+        config, mode="stream_quality"
+    )
+    with pytest.raises(ContractError, match="raw stream validation failed"):
+        run_fixed_provision_workflow(
+            config,
+            actual_staging,
+            dependencies=actual_dependencies,
+        )
+    actual_raw = load_json(actual_staging / "reports/stream_validation.json")
+    assert isinstance(actual_raw, dict)
+    actual_quality = actual_raw["quality"]
+    assert isinstance(actual_quality, dict)
+
+    preflight_dependencies, _preflight_session, _preflight_detector = _dependencies(
+        config, mode="stream_quality"
+    )
+    preflight = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / "stream-parity.json",
+        overlays=tmp_path / "stream-parity-overlays",
+        dependencies=preflight_dependencies,
+    )
+    assert preflight["raw_stream"] == {
+        "status": actual_raw["status"],
+        "metrics": actual_quality["metrics"],
+        "failure_reasons": actual_quality["failure_reasons"],
+    }
+
+
+@pytest.mark.parametrize("mode", ["stream_quality", "reprojection", "repeatability"])
+def test_live_preflight_persists_fail_closed_diagnostics(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    config = _config(generated_charuco_target)
+    dependencies, _session, _detector = _dependencies(config, mode=mode)
+    value = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / f"{mode}.json",
+        overlays=tmp_path / f"{mode}-overlays",
+        dependencies=dependencies,
+    )
+    assert value["status"] == "FAIL"
+    assert value["would_publish_fixed_provision"] is False
+    assert value["publication"]["fixed_provision_written"] is False  # type: ignore[index]
+    if mode == "stream_quality":
+        assert value["raw_stream"]["status"] == "FAIL"  # type: ignore[index]
+        assert value["target"]["status"] == "NOT_EVALUATED"  # type: ignore[index]
+        assert value["fixed_pose_frames"]["status"] == "NOT_EVALUATED"  # type: ignore[index]
+    else:
+        assert value["raw_stream"]["status"] == "PASS"  # type: ignore[index]
+        assert value["fixed_pose_frames"]["status"] == "EVALUATED"  # type: ignore[index]
+        assert value["final"]["decision"] == "WOULD_FAIL"  # type: ignore[index]
+        if mode == "reprojection":
+            counts = value["fixed_pose_frames"]["failure_reason_counts"]  # type: ignore[index]
+            assert counts["frame_reprojection_rmse_exceeded"] > 0  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_reason"),
+    [
+        ("observability", "POSE_CONDITION_NUMBER_EXCEEDED"),
+        ("ambiguity", "POSE_AMBIGUOUS"),
+    ],
+)
+def test_live_preflight_reports_uncertainty_frame_gate_failures(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+    failure_mode: str,
+    expected_reason: str,
+) -> None:
+    base = _config(generated_charuco_target)
+    config = replace(
+        base,
+        target=replace(base.target, detection_policy="uncertainty_validated"),
+    )
+    dependencies, _session, _detector = _dependencies(config)
+    thresholds = UncertaintyValidatedThresholds()
+    if failure_mode == "observability":
+        thresholds = replace(thresholds, maximum_scaled_condition_number=1.0)
+        pose_estimator = PlanarPoseEstimator(thresholds)
+    else:
+
+        class ForcedAmbiguousEstimator(PlanarPoseEstimator):
+            def estimate(self, observation, intrinsics):  # type: ignore[no-untyped-def]
+                estimate = super().estimate(observation, intrinsics)
+                ambiguity = replace(
+                    estimate.observability.candidate_ambiguity,
+                    materially_distinct=True,
+                    statistically_competitive=True,
+                    ambiguous=True,
+                )
+                observability = replace(
+                    estimate.observability,
+                    candidate_ambiguity=ambiguity,
+                    passed=False,
+                    failure_reasons=("POSE_AMBIGUOUS",),
+                )
+                return replace(estimate, observability=observability)
+
+        pose_estimator = ForcedAmbiguousEstimator()
+    dependencies = replace(
+        dependencies,
+        fixed_calibrator_factory=lambda: FixedCameraCalibrator(pose_estimator),
+    )
+    actual_staging = tmp_path / f"{failure_mode}-actual"
+    with pytest.raises(ContractError, match="no frame passing the pose frame gates"):
+        run_fixed_provision_workflow(config, actual_staging, dependencies=dependencies)
+    actual = load_json(actual_staging / "calibration/fixed_calibration.frame_gate_failed.json")
+    assert isinstance(actual, dict)
+    actual_per_frame = actual["per_frame_pose_summary"]
+
+    preflight_dependencies, _session, _detector = _dependencies(config)
+    preflight_dependencies = replace(
+        preflight_dependencies,
+        fixed_calibrator_factory=lambda: FixedCameraCalibrator(pose_estimator),
+    )
+    value = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / f"{failure_mode}.json",
+        overlays=tmp_path / f"{failure_mode}-overlays",
+        dependencies=preflight_dependencies,
+    )
+    assert value["status"] == "FAIL"
+    assert value["final"]["status"] == "NOT_EVALUATED"  # type: ignore[index]
+    counts = value["fixed_pose_frames"]["failure_reason_counts"]  # type: ignore[index]
+    assert counts.get(expected_reason) == 60, counts  # type: ignore[union-attr]
+    assert value["per_frame"] == actual_per_frame
