@@ -529,9 +529,7 @@ def test_existing_output_is_replaced_by_default(
 ) -> None:
     output = tmp_path / "fixed_camera"
     first = write_fixed_provision_artifact(output, valid_inputs, provenance={"run": "first"})
-    replacement = write_fixed_provision_artifact(
-        output, valid_inputs, provenance={"run": "second"}
-    )
+    replacement = write_fixed_provision_artifact(output, valid_inputs, provenance={"run": "second"})
     assert replacement.artifact_id != first.artifact_id
     assert load_and_validate_fixed_provision(output).provenance == {"run": "second"}
 
@@ -761,9 +759,7 @@ def test_output_symlink_is_never_replaced(
     output = tmp_path / "fixed_camera"
     output.symlink_to(real, target_is_directory=True)
     with pytest.raises(ArtifactError, match="real directory"):
-        write_fixed_provision_artifact(
-            output, valid_inputs, provenance={"source": "test"}
-        )
+        write_fixed_provision_artifact(output, valid_inputs, provenance={"source": "test"})
     assert output.is_symlink()
 
 

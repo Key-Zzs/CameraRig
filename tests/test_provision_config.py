@@ -51,7 +51,7 @@ def test_example_composes_existing_contracts_and_resolves_target_relative_to_yam
     assert config.acquisition.stream_validation_frames == FIXED_PROVISION_STREAM_VALIDATION_FRAMES
     assert config.target.expected_sha256 == ACCEPTED_TARGET_SHA256
     assert config.target.artifact_reference == "../targets/charuco_a4_v1/target_spec.json"
-    assert config.target.detection_policy == "legacy_strict"
+    assert config.target.detection_policy == "pose_validated"
     assert (
         config.target.artifact_path
         == (EXAMPLE.parent / "../targets/charuco_a4_v1/target_spec.json").resolve()
