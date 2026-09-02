@@ -145,7 +145,8 @@
         "frame_index": {"type": "integer", "minimum": 0},
         "success": {"type": "boolean"},
         "observation": {"$ref": "#/$defs/observation"},
-        "overlay": {"type": ["string", "null"], "minLength": 1}
+        "overlay": {"type": ["string", "null"], "minLength": 1},
+        "pose_diagnostic": {"type": "object"}
       }
     },
     "statistics": {
@@ -209,7 +210,8 @@
         "detected_charuco_corner_count": {"$ref": "#/$defs/statistics"},
         "corner_fraction": {"$ref": "#/$defs/statistics"},
         "coverage_ratio": {"$ref": "#/$defs/statistics"},
-        "temporal_jitter": {"$ref": "#/$defs/temporal_jitter"}
+        "temporal_jitter": {"$ref": "#/$defs/temporal_jitter"},
+        "pose_observability": {"type": "object"}
       }
     },
     "acceptance": {
@@ -218,7 +220,17 @@
       "required": ["passed", "thresholds", "checks"],
       "properties": {
         "passed": {"type": "boolean"},
-        "policy": {"enum": ["legacy_strict", "pose_validated"]},
+        "policy": {"enum": ["legacy_strict", "pose_validated", "uncertainty_validated"]},
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["observed_median", "recommended", "hard_gate"],
+          "properties": {
+            "observed_median": {"type": "number", "minimum": 0, "maximum": 1},
+            "recommended": {"type": "number", "minimum": 0, "maximum": 1},
+            "hard_gate": {"const": false}
+          }
+        },
         "recommendations": {
           "type": "object",
           "additionalProperties": false,
@@ -228,23 +240,32 @@
         "thresholds": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "frame_count",
-            "success_ratio",
-            "median_charuco_corners",
-            "median_corner_fraction",
-            "median_coverage_ratio",
-            "median_jitter_px",
-            "p95_jitter_px"
+          "oneOf": [
+            {"required": ["frame_count", "success_ratio", "median_charuco_corners", "median_corner_fraction", "median_coverage_ratio", "median_jitter_px", "p95_jitter_px"]},
+            {"required": ["frame_count", "detection_success_ratio", "median_charuco_corners", "median_corner_fraction", "median_jitter_px", "p95_jitter_px", "preset", "pixel_noise_floor_px", "maximum_frame_translation_worst_std_mm", "maximum_frame_rotation_worst_std_deg", "maximum_final_translation_worst_std_mm", "maximum_final_rotation_worst_std_deg", "maximum_scaled_condition_number", "minimum_pose_solve_ratio", "minimum_observable_frame_ratio", "maximum_ambiguous_frame_ratio", "ambiguity_minimum_delta_chi2", "ambiguity_material_translation_mm", "ambiguity_material_rotation_deg"]}
           ],
           "properties": {
             "frame_count": {"type": "integer", "minimum": 1},
             "success_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "detection_success_ratio": {"type": "number", "minimum": 0, "maximum": 1},
             "median_charuco_corners": {"type": "number", "minimum": 0},
             "median_corner_fraction": {"type": "number", "minimum": 0, "maximum": 1},
             "median_coverage_ratio": {"type": "number", "minimum": 0, "maximum": 1},
             "median_jitter_px": {"type": "number", "minimum": 0},
-            "p95_jitter_px": {"type": "number", "minimum": 0}
+            "p95_jitter_px": {"type": "number", "minimum": 0},
+            "preset": {"const": "uncertainty_validated_v1"},
+            "pixel_noise_floor_px": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_frame_translation_worst_std_mm": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_frame_rotation_worst_std_deg": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_final_translation_worst_std_mm": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_final_rotation_worst_std_deg": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_scaled_condition_number": {"type": "number", "exclusiveMinimum": 0},
+            "minimum_pose_solve_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "minimum_observable_frame_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "maximum_ambiguous_frame_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+            "ambiguity_minimum_delta_chi2": {"type": "number", "exclusiveMinimum": 0},
+            "ambiguity_material_translation_mm": {"type": "number", "exclusiveMinimum": 0},
+            "ambiguity_material_rotation_deg": {"type": "number", "exclusiveMinimum": 0}
           }
         },
         "checks": {
@@ -252,11 +273,13 @@
           "additionalProperties": false,
           "oneOf": [
             {"required": ["frame_count_is_60", "success_ratio_at_least_0_95", "median_corners_at_least_20", "median_corner_fraction_at_least_0_80", "median_coverage_at_least_0_05", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px"]},
-            {"required": ["frame_count_is_60", "success_ratio_at_least_0_95", "median_corners_at_least_threshold", "median_corner_fraction_at_least_threshold", "median_coverage_at_least_threshold", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px"]}
+            {"required": ["frame_count_is_60", "success_ratio_at_least_0_95", "median_corners_at_least_threshold", "median_corner_fraction_at_least_threshold", "median_coverage_at_least_threshold", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px"]},
+            {"required": ["frame_count_is_60", "detection_success_ratio_at_least_0_95", "median_corners_at_least_threshold", "median_corner_fraction_at_least_threshold", "median_jitter_at_most_0_5_px", "p95_jitter_at_most_1_0_px", "temporal_jitter_has_eligible_corners", "pose_solve_ratio_at_least_threshold", "observable_frame_ratio_at_least_threshold", "p95_translation_uncertainty_at_most_threshold", "p95_rotation_uncertainty_at_most_threshold", "p95_condition_number_at_most_threshold", "ambiguous_frame_ratio_at_most_threshold"]}
           ],
           "properties": {
             "frame_count_is_60": {"type": "boolean"},
             "success_ratio_at_least_0_95": {"type": "boolean"},
+            "detection_success_ratio_at_least_0_95": {"type": "boolean"},
             "median_corners_at_least_20": {"type": "boolean"},
             "median_corner_fraction_at_least_0_80": {"type": "boolean"},
             "median_coverage_at_least_0_05": {"type": "boolean"},
@@ -264,7 +287,14 @@
             "median_corner_fraction_at_least_threshold": {"type": "boolean"},
             "median_coverage_at_least_threshold": {"type": "boolean"},
             "median_jitter_at_most_0_5_px": {"type": "boolean"},
-            "p95_jitter_at_most_1_0_px": {"type": "boolean"}
+            "p95_jitter_at_most_1_0_px": {"type": "boolean"},
+            "temporal_jitter_has_eligible_corners": {"type": "boolean"},
+            "pose_solve_ratio_at_least_threshold": {"type": "boolean"},
+            "observable_frame_ratio_at_least_threshold": {"type": "boolean"},
+            "p95_translation_uncertainty_at_most_threshold": {"type": "boolean"},
+            "p95_rotation_uncertainty_at_most_threshold": {"type": "boolean"},
+            "p95_condition_number_at_most_threshold": {"type": "boolean"},
+            "ambiguous_frame_ratio_at_most_threshold": {"type": "boolean"}
           }
         }
       }

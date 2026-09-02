@@ -15,12 +15,18 @@ from camera_rig.artifacts.io import atomic_write_json
 from camera_rig.capture.session import CameraSession
 from camera_rig.config.models import CameraConfig
 from camera_rig.core.errors import ArtifactError, ContractError
+from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame
 from camera_rig.targets.charuco.detector import CharucoDetector
 from camera_rig.targets.charuco.overlay import write_overlay
 from camera_rig.targets.charuco.quality import CharucoQualityThresholds
 from camera_rig.targets.io import validate_target_artifact
 from camera_rig.targets.observation import TargetObservation
+from camera_rig.targets.pose_acceptance import (
+    aggregate_pose_diagnostics,
+    pose_frame_diagnostic,
+    uncertainty_capture_acceptance,
+)
 from camera_rig.version import __version__
 
 
@@ -30,6 +36,8 @@ class _Session(Protocol):
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None: ...
 
     def capture(self) -> CameraFrame: ...
+
+    def get_factory_calibration(self) -> FactoryCalibration: ...
 
 
 def run_target_preflight(
@@ -51,18 +59,25 @@ def run_target_preflight(
     if stream not in camera_config.streams or not camera_config.streams[stream].enabled:
         raise ContractError(f"target preflight stream {stream!r} must be enabled")
     target = validate_target_artifact(target_path)
-    thresholds = (
-        CharucoQualityThresholds.pose_validated()
-        if policy == "pose_validated"
-        else CharucoQualityThresholds()
-    )
-    if policy not in {"legacy_strict", "pose_validated"}:
+    if policy == "pose_validated":
+        thresholds = CharucoQualityThresholds.pose_validated()
+    elif policy == "uncertainty_validated":
+        thresholds = CharucoQualityThresholds.uncertainty_validated()
+    else:
+        thresholds = CharucoQualityThresholds()
+    if policy not in {"legacy_strict", "pose_validated", "uncertainty_validated"}:
         raise ContractError(f"unsupported target preflight policy: {policy!r}")
     detector = CharucoDetector(target, thresholds=thresholds)
     make_session = session_factory or CameraSession.from_config
     observations: list[TargetObservation] = []
     images: list[npt.NDArray[np.uint8]] = []
+    intrinsics = None
     with make_session(camera_config) as session:
+        if policy == "uncertainty_validated":
+            try:
+                intrinsics = session.get_factory_calibration().intrinsics[stream]
+            except (AttributeError, KeyError, ContractError) as error:
+                raise ContractError("POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE") from error
         for _index in range(frames):
             frame = session.capture()
             if stream not in frame.streams:
@@ -72,6 +87,11 @@ def run_target_preflight(
                 raise ArtifactError("target preflight stream must be uint8")
             observations.append(detector.detect(image))
             images.append(np.asarray(image, dtype=np.uint8).copy())
+    pose_diagnostics = (
+        [pose_frame_diagnostic(item, intrinsics) for item in observations]
+        if intrinsics is not None
+        else None
+    )
     overlay_root = Path(overlays_path)
     overlay_root.mkdir(parents=True, exist_ok=True)
     selected = {
@@ -85,7 +105,24 @@ def run_target_preflight(
         write_overlay(overlay_root / name, images[index], observations[index])
         overlay_files[label] = name
     metrics = _aggregate(observations)
-    recommendation = _recommendation(observations)
+    acceptance = None
+    if pose_diagnostics is not None:
+        metrics["pose_observability"] = aggregate_pose_diagnostics(pose_diagnostics)
+        acceptance = uncertainty_capture_acceptance(
+            aggregate=metrics,
+            frame_count=frames,
+            minimum_frames=60,
+        )
+        recommendation = (
+            "ADEQUATE_WITH_LOW_COVERAGE_WARNING"
+            if acceptance["passed"] is True
+            and any(item.quality.warnings for item in observations)
+            else "ADEQUATE"
+            if acceptance["passed"] is True
+            else "POSE_OBSERVABILITY_FAILED"
+        )
+    else:
+        recommendation = _recommendation(observations)
     report: dict[str, object] = {
         "schema_version": "camera-rig.target-preflight.v1",
         "status": "PASS" if recommendation.startswith("ADEQUATE") else "FAIL",
@@ -93,9 +130,11 @@ def run_target_preflight(
         "stream": stream,
         "frame_count": frames,
         "policy": policy,
+        "pose_observability_used": pose_diagnostics is not None,
         "target_spec_sha256": target.artifact_sha256 or sha256_file(target_path),
         "thresholds": observations[0].quality.thresholds,
         "metrics": metrics,
+        **({"acceptance": acceptance} if acceptance is not None else {}),
         "recommendation": recommendation,
         "selected_overlays": overlay_files,
         "per_frame": [
@@ -106,11 +145,20 @@ def run_target_preflight(
                 "metrics": observation.quality.metrics,
                 "warnings": list(observation.quality.warnings),
                 "failure_reasons": list(observation.quality.failure_reasons),
+                **(
+                    {"pose_diagnostic": pose_diagnostics[index]}
+                    if pose_diagnostics is not None
+                    else {}
+                ),
             }
             for index, observation in enumerate(observations)
         ],
         "software": {"camera_rig_version": __version__, "opencv_version": target.opencv_version},
-        "notice": "pose-free deployment preflight; no fixed extrinsic was estimated",
+        "notice": (
+            "pose-observability deployment preflight; no fixed extrinsic was persisted"
+            if pose_diagnostics is not None
+            else "pose-free deployment preflight; no fixed extrinsic was estimated"
+        ),
     }
     atomic_write_json(report_path, report)
     return report

@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+from camera_rig.artifacts.factory_calibration import load_and_validate_factory_calibration
 from camera_rig.artifacts.hashing import sha256_file
 from camera_rig.artifacts.target_detection import (
     TargetDetectionArtifact,
@@ -22,6 +23,11 @@ from camera_rig.targets.charuco.overlay import write_overlay
 from camera_rig.targets.charuco.quality import CharucoQualityThresholds
 from camera_rig.targets.io import load_target
 from camera_rig.targets.observation import TargetObservation
+from camera_rig.targets.pose_acceptance import (
+    aggregate_pose_diagnostics,
+    pose_frame_diagnostic,
+    uncertainty_capture_acceptance,
+)
 from camera_rig.targets.registry import registry
 from camera_rig.version import __version__
 
@@ -89,11 +95,27 @@ def validate_capture_artifact_target(
     detector: TargetDetector
     if policy == "pose_validated":
         detector = CharucoDetector(target, thresholds=CharucoQualityThresholds.pose_validated())
+    elif policy == "uncertainty_validated":
+        detector = CharucoDetector(
+            target, thresholds=CharucoQualityThresholds.uncertainty_validated()
+        )
     elif policy == "legacy_strict":
         detector = registry.create(plugin_name=target.plugin, target_spec=target)
     else:
         raise ArtifactError(f"unsupported target-detection policy: {policy!r}")
     session = ReplayCameraSession.from_artifact(artifact_path)
+    intrinsics = None
+    if policy == "uncertainty_validated":
+        factory_reference = session.manifest.get("factory_calibration")
+        if not isinstance(factory_reference, str):
+            raise ArtifactError("POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE")
+        try:
+            factory = load_and_validate_factory_calibration(
+                Path(artifact_path) / factory_reference
+            )
+            intrinsics = factory.calibration.intrinsics[stream]
+        except (ArtifactError, KeyError) as error:
+            raise ArtifactError("POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE") from error
     observations: list[TargetObservation] = []
     images: list[npt.NDArray[np.uint8]] = []
     with session:
@@ -112,15 +134,22 @@ def validate_capture_artifact_target(
             images.append(image)
     if not observations:
         raise ArtifactError("capture artifact contains no frames")
+    pose_diagnostics = (
+        [pose_frame_diagnostic(item, intrinsics) for item in observations]
+        if intrinsics is not None
+        else None
+    )
     overlay_root = Path(overlays_path)
     overlay_root.mkdir(parents=True, exist_ok=True)
-    selected = _selected_frames(observations)
+    selected = _selected_frames(observations, pose_diagnostics=pose_diagnostics)
     overlay_files: dict[int, str] = {}
     for label, index in selected.items():
         filename = f"{label}_frame_{index:06d}.png"
         write_overlay(overlay_root / filename, images[index], observations[index])
         overlay_files[index] = filename
     aggregate = _aggregate(observations)
+    if pose_diagnostics is not None:
+        aggregate["pose_observability"] = aggregate_pose_diagnostics(pose_diagnostics)
     manifest_path = Path(artifact_path) / "manifest.json"
     report: dict[str, object] = {
         "schema_version": "camera-rig.target-detection.v1",
@@ -136,6 +165,11 @@ def validate_capture_artifact_target(
                 "success": observation.quality.passed,
                 "observation": observation.to_dict(),
                 "overlay": overlay_files.get(index),
+                **(
+                    {"pose_diagnostic": pose_diagnostics[index]}
+                    if pose_diagnostics is not None
+                    else {}
+                ),
             }
             for index, observation in enumerate(observations)
         ],
@@ -219,6 +253,17 @@ def _temporal_jitter(observations: list[TargetObservation]) -> dict[str, object]
 def _acceptance(
     aggregate: dict[str, object], frame_count: int, *, policy: str = "legacy_strict"
 ) -> dict[str, object]:
+    if policy == "uncertainty_validated":
+        return uncertainty_capture_acceptance(
+            aggregate=aggregate,
+            frame_count=frame_count,
+            minimum_frames=_MINIMUM_CAPTURE_FRAMES,
+            minimum_detection_success_ratio=_MINIMUM_SUCCESS_RATIO,
+            minimum_median_corners=_POSE_MINIMUM_MEDIAN_CORNERS,
+            minimum_median_corner_fraction=_POSE_MINIMUM_MEDIAN_CORNER_FRACTION,
+            maximum_median_jitter_px=_MAXIMUM_MEDIAN_JITTER_PX,
+            maximum_p95_jitter_px=_MAXIMUM_P95_JITTER_PX,
+        )
     corners = _mapping(aggregate["detected_charuco_corner_count"])
     fractions = _mapping(aggregate["corner_fraction"])
     coverage = _mapping(aggregate["coverage_ratio"])
@@ -275,8 +320,17 @@ def _acceptance(
     }
 
 
-def _selected_frames(observations: list[TargetObservation]) -> dict[str, int]:
-    accepted = [index for index, item in enumerate(observations) if item.quality.passed]
+def _selected_frames(
+    observations: list[TargetObservation],
+    *,
+    pose_diagnostics: list[dict[str, object]] | None = None,
+) -> dict[str, int]:
+    accepted = [
+        index
+        for index, item in enumerate(observations)
+        if item.quality.passed
+        and (pose_diagnostics is None or pose_diagnostics[index].get("observable") is True)
+    ]
     if not accepted:
         return {}
     ranked = sorted(

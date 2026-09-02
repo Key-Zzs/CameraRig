@@ -47,6 +47,11 @@ def add_target_commands(
     validate.add_argument("--target", type=Path, required=True)
     validate.add_argument("--artifact", type=Path, required=True)
     validate.add_argument("--stream", default="color")
+    validate.add_argument(
+        "--policy",
+        choices=("legacy_strict", "pose_validated", "uncertainty_validated"),
+        default="legacy_strict",
+    )
     validate.add_argument("--report", type=Path, required=True)
     validate.add_argument("--overlays", type=Path, required=True)
     validate.set_defaults(handler=_validate_artifact)
@@ -87,7 +92,9 @@ def add_target_commands(
     preflight.add_argument("--frames", type=int, default=60)
     preflight.add_argument("--stream", default="color")
     preflight.add_argument(
-        "--policy", choices=("legacy_strict", "pose_validated"), default="pose_validated"
+        "--policy",
+        choices=("legacy_strict", "pose_validated", "uncertainty_validated"),
+        default="pose_validated",
     )
     preflight.add_argument("--report", type=Path, required=True)
     preflight.add_argument("--overlays", type=Path, required=True)
@@ -141,6 +148,7 @@ def _validate_artifact(arguments: argparse.Namespace) -> int:
         stream=arguments.stream,
         report_path=arguments.report,
         overlays_path=arguments.overlays,
+        policy=arguments.policy,
     )
     acceptance = report["acceptance"]
     assert isinstance(acceptance, dict)

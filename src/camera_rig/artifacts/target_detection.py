@@ -25,6 +25,7 @@ class TargetDetectionFrame:
     success: bool
     observation: TargetObservation
     overlay: str | None = None
+    pose_diagnostic: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.frame_index, bool) or not isinstance(self.frame_index, int):
@@ -37,6 +38,12 @@ class TargetDetectionFrame:
             raise ContractError("frame success must match observation quality")
         if self.overlay is not None:
             _require_relative_path(self.overlay, "overlay")
+        diagnostic = (
+            string_keyed_copy(self.pose_diagnostic, "pose_diagnostic")
+            if self.pose_diagnostic is not None
+            else None
+        )
+        object.__setattr__(self, "pose_diagnostic", diagnostic)
 
     def to_dict(self, *, include_overlay: bool) -> dict[str, object]:
         result: dict[str, object] = {
@@ -46,12 +53,15 @@ class TargetDetectionFrame:
         }
         if include_overlay:
             result["overlay"] = self.overlay
+        if self.pose_diagnostic is not None:
+            result["pose_diagnostic"] = dict(self.pose_diagnostic)
         return result
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> TargetDetectionFrame:
         expected = {"frame_index", "success", "observation"}
-        if set(data) not in (expected, expected | {"overlay"}):
+        allowed = expected | {"overlay", "pose_diagnostic"}
+        if not expected <= set(data) or not set(data) <= allowed:
             raise ContractError("target detection frame has missing or unknown fields")
         overlay = data.get("overlay")
         if overlay is not None and not isinstance(overlay, str):
@@ -61,6 +71,11 @@ class TargetDetectionFrame:
             success=_boolean(data["success"], "success"),
             observation=TargetObservation.from_dict(_object(data["observation"], "observation")),
             overlay=overlay,
+            pose_diagnostic=(
+                _object(data["pose_diagnostic"], "pose_diagnostic")
+                if "pose_diagnostic" in data
+                else None
+            ),
         )
 
 

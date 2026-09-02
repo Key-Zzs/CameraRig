@@ -446,6 +446,7 @@ def _default_target_detection_runner(
     stream: str,
     report_path: Path,
     overlays_path: Path,
+    policy: str,
 ) -> TargetDetectionArtifact:
     validate_capture_artifact_target(
         target_path=target_path,
@@ -453,6 +454,7 @@ def _default_target_detection_runner(
         stream=stream,
         report_path=report_path,
         overlays_path=overlays_path,
+        policy=policy,
     )
     return load_and_validate_target_detection(report_path)
 

@@ -59,7 +59,11 @@ class ProvisionTargetSettings:
             character not in "0123456789abcdef" for character in self.expected_sha256
         ):
             raise ContractError("target.expected_sha256 must be a lowercase SHA-256 digest")
-        if self.detection_policy not in {"legacy_strict", "pose_validated"}:
+        if self.detection_policy not in {
+            "legacy_strict",
+            "pose_validated",
+            "uncertainty_validated",
+        }:
             raise ContractError("target.detection_policy is unsupported")
 
 

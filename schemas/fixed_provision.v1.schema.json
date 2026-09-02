@@ -52,7 +52,7 @@
           "$ref": "fixed_calibration_config.v1.schema.json#/properties/camera/properties/detection_stream"
         },
         "detection_policy": {
-          "enum": ["legacy_strict", "pose_validated"]
+          "enum": ["legacy_strict", "pose_validated", "uncertainty_validated"]
         }
       }
     },

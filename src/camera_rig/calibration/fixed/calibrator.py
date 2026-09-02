@@ -26,7 +26,10 @@ from camera_rig.calibration.fixed.quality import evaluate_fixed_calibration_qual
 from camera_rig.calibration.pose import (
     PlanarPoseEstimate,
     PlanarPoseEstimator,
+    PoseAmbiguityCandidate,
     RefinedPlanarPose,
+    UncertaintyValidatedThresholds,
+    evaluate_pose_observability,
     project_points_px,
     refine_planar_pose_lm,
 )
@@ -73,6 +76,9 @@ class FixedCameraCalibrator:
         )
         detection_intrinsics, reference_frame, detection_from_reference = inputs
         print_evidence = _validated_print_provenance(print_provenance)
+        acceptance = target_detection.acceptance or {}
+        pose_policy = acceptance.get("policy", "legacy_strict")
+        uncertainty_policy = pose_policy == "uncertainty_validated"
 
         estimates: dict[int, PlanarPoseEstimate] = {}
         summaries: list[dict[str, object]] = []
@@ -84,6 +90,7 @@ class FixedCameraCalibrator:
                 frame.observation,
                 detection_intrinsics,
                 config,
+                uncertainty_policy=uncertainty_policy,
             )
             summaries.append(summary)
             if estimate is not None:
@@ -132,6 +139,54 @@ class FixedCameraCalibrator:
                 f"{list(final_refinement.validity.failure_reasons)}"
             )
         final_pose = final_refinement.T_camera_from_target
+        final_pose_observability = None
+        if uncertainty_policy:
+            final_objects = np.vstack(
+                [
+                    target_detection.per_frame[index].observation.object_points_m
+                    for index in inlier_indices
+                ]
+            )
+            final_images = np.vstack(
+                [
+                    target_detection.per_frame[index].observation.image_points_px
+                    for index in inlier_indices
+                ]
+            )
+            template_observation = target_detection.per_frame[inlier_indices[0]].observation
+            stacked_observation = TargetObservation(
+                plugin_name=template_observation.plugin_name,
+                target_frame=template_observation.target_frame,
+                point_ids=tuple(range(len(final_objects))),
+                image_points_px=final_images,
+                object_points_m=final_objects,
+                image_size=template_observation.image_size,
+                quality=template_observation.quality,
+                metadata={"purpose": "final_shared_pose_ambiguity"},
+            )
+            final_candidate_estimate = self._pose_estimator.estimate(
+                stacked_observation, detection_intrinsics
+            )
+            final_ambiguity_candidates = tuple(
+                PoseAmbiguityCandidate(
+                    index=item.index,
+                    T_camera_from_target=item.T_camera_from_target,
+                    valid=item.validity.valid,
+                    reprojection_sse_px2=float(
+                        np.sum(np.square(item.reprojection.residuals_px))
+                    ),
+                )
+                for item in final_candidate_estimate.candidates
+            )
+            final_pose_observability = evaluate_pose_observability(
+                object_points_m=final_objects,
+                image_points_px=final_images,
+                T_camera_from_target=final_pose,
+                intrinsics=detection_intrinsics,
+                ambiguity_candidates=final_ambiguity_candidates,
+                thresholds=UncertaintyValidatedThresholds(),
+                scope="final",
+            ).to_dict()
         depth_diagnostic = _validated_depth_diagnostic(
             native_depth_evaluator(final_pose, tuple(inlier_indices))
         )
@@ -162,6 +217,17 @@ class FixedCameraCalibrator:
             estimates,
             detection_intrinsics,
         )
+        solved_estimates = list(estimates.values())
+        observable_frame_ratio = (
+            sum(item.observability.passed for item in solved_estimates)
+            / target_detection.frame_count
+        )
+        ambiguous_frame_ratio = (
+            sum(item.observability.candidate_ambiguity.ambiguous for item in solved_estimates)
+            / len(solved_estimates)
+            if solved_estimates
+            else 1.0
+        )
         quality = evaluate_fixed_calibration_quality(
             thresholds=config.solver,
             frame_count=target_detection.frame_count,
@@ -170,6 +236,10 @@ class FixedCameraCalibrator:
             pose_repeatability=repeatability,
             split_half=split_half,
             native_depth_sanity=depth_diagnostic,
+            pose_policy=str(pose_policy),
+            final_pose_observability=final_pose_observability,
+            observable_frame_ratio=observable_frame_ratio if uncertainty_policy else None,
+            ambiguous_frame_ratio=ambiguous_frame_ratio if uncertainty_policy else None,
         )
 
         workspace_from_detection = config.T_workspace_from_target.compose(final_pose.inverse())
@@ -242,6 +312,16 @@ class FixedCameraCalibrator:
                 "pose_repeatability": repeatability,
                 "split_half": split_half,
                 "native_depth_sanity": depth_diagnostic,
+                **(
+                    {
+                        "pose_policy": pose_policy,
+                        "observable_frame_ratio": observable_frame_ratio,
+                        "ambiguous_frame_ratio": ambiguous_frame_ratio,
+                        "final_pose_observability": final_pose_observability,
+                    }
+                    if uncertainty_policy
+                    else {}
+                ),
             },
             T_detection_from_target=final_pose,
             T_workspace_from_detection=workspace_from_detection,
@@ -259,13 +339,19 @@ class FixedCameraCalibrator:
         observation: TargetObservation,
         intrinsics: CameraIntrinsics,
         config: FixedCalibrationConfig,
+        *,
+        uncertainty_policy: bool = False,
     ) -> tuple[dict[str, object], PlanarPoseEstimate | None]:
         reasons: list[str] = []
         corner_count = len(observation.point_ids)
         if not detection_success:
-            reasons.append("target_detection_failed")
+            reasons.append(
+                "DETECTION_INTEGRITY_FAILED"
+                if uncertainty_policy
+                else "target_detection_failed"
+            )
         if corner_count < config.solver.minimum_corners_per_frame:
-            reasons.append("insufficient_corners")
+            reasons.append("INSUFFICIENT_CORNERS" if uncertainty_policy else "insufficient_corners")
         summary: dict[str, object] = {
             "frame_index": frame_index,
             "corner_count": corner_count,
@@ -296,13 +382,27 @@ class FixedCameraCalibrator:
         try:
             estimate = self._pose_estimator.estimate(observation, intrinsics)
         except ContractError as error:
-            reasons.append(f"pose_solve_failed: {error}")
+            reasons.append(
+                f"POSE_SOLVE_FAILED: {error}"
+                if uncertainty_policy
+                else f"pose_solve_failed: {error}"
+            )
             return summary, None
         reprojection = estimate.reprojection
         if reprojection.rmse_px > config.solver.maximum_frame_rmse_px:
-            reasons.append("frame_reprojection_rmse_exceeded")
+            reasons.append(
+                "REPROJECTION_RMSE_EXCEEDED"
+                if uncertainty_policy
+                else "frame_reprojection_rmse_exceeded"
+            )
         if reprojection.p95_px > config.solver.maximum_frame_p95_px:
-            reasons.append("frame_reprojection_p95_exceeded")
+            reasons.append(
+                "REPROJECTION_P95_EXCEEDED"
+                if uncertainty_policy
+                else "frame_reprojection_p95_exceeded"
+            )
+        if uncertainty_policy:
+            reasons.extend(estimate.observability.failure_reasons)
         accepted = not reasons
         summary.update(
             {
@@ -322,6 +422,11 @@ class FixedCameraCalibrator:
                 "frame_gate_accepted": accepted,
                 "pose_inlier": accepted,
                 "accepted": accepted,
+                **(
+                    {"observability": estimate.observability.to_dict()}
+                    if uncertainty_policy
+                    else {}
+                ),
             }
         )
         return summary, estimate

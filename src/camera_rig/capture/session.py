@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from camera_rig.config.models import CameraConfig
 from camera_rig.core.errors import ConfigurationError, LifecycleError
+from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame
 from camera_rig.drivers.base import CameraLifecycleState
 from camera_rig.drivers.realsense.driver import RealSenseDriver
+from camera_rig.drivers.realsense.factory_calibration import extract_factory_calibration
 from camera_rig.drivers.realsense.frame_conversion import convert_frameset
 
 
@@ -41,6 +43,10 @@ class CameraSession:
 
     def capture(self) -> CameraFrame:
         return self.wait_for_frame()
+
+    def get_factory_calibration(self) -> FactoryCalibration:
+        """Read calibration from this session's already-active pipeline."""
+        return extract_factory_calibration(self.driver)
 
     def wait_for_frame(self) -> CameraFrame:
         try:

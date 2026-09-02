@@ -23,7 +23,7 @@ class CharucoQualityThresholds:
     recommended_coverage_ratio: float = 0.05
 
     def __post_init__(self) -> None:
-        if self.policy not in {"legacy_strict", "pose_validated"}:
+        if self.policy not in {"legacy_strict", "pose_validated", "uncertainty_validated"}:
             raise ValueError(f"unsupported ChArUco quality policy: {self.policy!r}")
 
     @classmethod
@@ -32,6 +32,15 @@ class CharucoQualityThresholds:
         return cls(
             policy="pose_validated",
             absolute_minimum_coverage_ratio=0.01,
+            recommended_coverage_ratio=0.05,
+        )
+
+    @classmethod
+    def uncertainty_validated(cls) -> CharucoQualityThresholds:
+        """Return detection-integrity gates for pose-observability acceptance."""
+        return cls(
+            policy="uncertainty_validated",
+            absolute_minimum_coverage_ratio=0.0,
             recommended_coverage_ratio=0.05,
         )
 
@@ -83,9 +92,17 @@ def detection_quality(
     ]
     failures: list[str] = []
     if corner_count < thresholds.minimum_charuco_corners:
-        failures.append("insufficient ChArUco corners")
+        failures.append(
+            "INSUFFICIENT_CORNERS"
+            if thresholds.policy == "uncertainty_validated"
+            else "insufficient ChArUco corners"
+        )
     if fraction < thresholds.minimum_corner_fraction:
-        failures.append("corner fraction below threshold")
+        failures.append(
+            "INSUFFICIENT_CORNER_FRACTION"
+            if thresholds.policy == "uncertainty_validated"
+            else "corner fraction below threshold"
+        )
     minimum_perimeter = float(np.min(perimeters)) if perimeters else 0.0
     if thresholds.policy == "pose_validated":
         if x_span < thresholds.minimum_span_x_ratio:
@@ -94,11 +111,28 @@ def detection_quality(
             failures.append("image y span below threshold")
         if minimum_perimeter < thresholds.minimum_marker_perimeter_px:
             failures.append("marker perimeter below threshold")
-    if coverage < thresholds.absolute_minimum_coverage_ratio:
+    elif (
+        thresholds.policy == "uncertainty_validated"
+        and minimum_perimeter < thresholds.minimum_marker_perimeter_px
+    ):
+        failures.append("MARKER_PIXEL_SCALE_TOO_SMALL")
+    if (
+        thresholds.policy != "uncertainty_validated"
+        and coverage < thresholds.absolute_minimum_coverage_ratio
+    ):
         failures.append("board coverage below absolute minimum")
     warnings: list[str] = []
     if coverage < thresholds.recommended_coverage_ratio:
-        warnings.append("board coverage below recommended deployment coverage")
+        warnings.append(
+            "LOW_COVERAGE_ADVISORY"
+            if thresholds.policy == "uncertainty_validated"
+            else "board coverage below recommended deployment coverage"
+        )
+    if thresholds.policy == "uncertainty_validated":
+        if x_span < thresholds.minimum_span_x_ratio:
+            warnings.append("LOW_IMAGE_X_SPAN_ADVISORY")
+        if y_span < thresholds.minimum_span_y_ratio:
+            warnings.append("LOW_IMAGE_Y_SPAN_ADVISORY")
     return QualityReport(
         passed=not failures,
         metrics={
