@@ -17,6 +17,14 @@ not open the camera and does not create a final artifact.
 The live command opens the D435i once. Every acquired frame contributes to raw-stream
 validation; a deterministic evenly spaced subset contributes to the replay snapshot,
 target detection, and fixed-pose solve. The selected source indices are persisted.
+Factory intrinsics for pose observability are read from that same active session; the camera is not
+closed and reopened. Replay uses the hash-bound factory artifact. Missing or unsupported
+intrinsics fail as `POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE`; there is no fallback policy.
+
+Raw-stream validation remains a separate prerequisite. `uncertainty_validated` does not modify or
+bypass `StreamValidationAccumulator`. Missing streams, timeouts, discontinuities, FPS/timestamp or
+sync failures, shape/dtype changes, empty depth, zero stream variance, or identical stereo arrays
+remain raw-stream failures and are not pose-observability failures.
 
 The output is built in a sibling temporary directory. CameraBundle reload, manifest
 reload, checksums, cross-file identities, safe relative paths, and the exact file set

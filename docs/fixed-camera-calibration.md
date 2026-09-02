@@ -25,6 +25,21 @@ rejected against persisted translation and geodesic-rotation thresholds, then al
 correspondences jointly refine one shared pose. Even and odd frames are independently
 refined for split-half stability.
 
+With `uncertainty_validated`, every LM-refined frame also evaluates the analytic OpenCV projection
+Jacobian for `p = [rvec_rad, tvec_m]`. Translation columns are scaled by the RMS target radius
+before rank, singular values, and condition number are computed, so radians are not compared
+directly with metres. Component pixel residuals use `dof = max(2N - 6, 1)` and a 0.25 px release
+noise floor. Full-rank covariance is computed with an SVD pseudoinverse; rank-deficient geometry
+has no covariance and fails closed. The gate uses worst-axis translation and rotation standard
+deviations. After joint refinement, the complete inlier correspondence set is evaluated again as
+the final shared pose; frame count cannot hide a poor observable-frame ratio.
+
+This covariance is conditional local pose uncertainty with fixed K/D, fixed target geometry,
+correct associations, and a local Gaussian pixel approximation. It is not absolute calibration
+uncertainty and excludes target warp/print scale, factory-intrinsic uncertainty, factory
+Color-to-IR extrinsic uncertainty, and mount deformation. Temporal repeatability, split-half,
+native depth, and downstream physical acceptance therefore remain independent hard evidence.
+
 The final transform chain uses frame-aware operations:
 
 ```text

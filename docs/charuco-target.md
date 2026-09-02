@@ -56,22 +56,31 @@ both capture sources, identification returns
 `USER_AUTHORITATIVE_DICTIONARY_CONFLICTS_WITH_VISUAL_EVIDENCE`; it never falls back to
 the visually preferred dictionary.
 
-Run pose-free deployment preflight before fixed provisioning:
+Run pose-observability deployment preflight before fixed provisioning:
 
 ```bash
 camera-rig target preflight \
   --camera-config .local/configs/camera.yaml \
   --target .local/target/charuco_existing_v1/target_spec.json \
   --frames 60 \
-  --policy pose_validated \
+  --policy uncertainty_validated \
   --report .local/reports/target_preflight.json \
   --overlays .local/overlays/target_preflight
 ```
 
-`pose_validated` makes 5% coverage advisory while 1% absolute coverage, 12 corners,
-50% corner fraction, spans, and marker scale stay hard-gated. Final calibration still hard-gates
-cheirality, printed-face orientation, reprojection, pose repeatability, split-half
-stability, and native-depth sanity. `legacy_strict` retains the original 5% hard gate.
+`uncertainty_validated` makes coverage and image span advisory. It retains at least 12 corners,
+50% corner fraction, finite two-dimensional target geometry, and the marker pixel-scale floor,
+then requires PnP success, a full-rank scaled projection Jacobian, bounded translation/rotation
+uncertainty, bounded condition number, and no materially different statistically competitive IPPE
+alternative. Sixty-frame acceptance uses solve/observable ratios and p95 uncertainty; it does not
+require every frame to pass. Low coverage is never an automatic pass: weak, noisy, clustered, or
+ambiguous low-coverage observations still fail.
+
+`pose_validated` is unchanged: 5% coverage is advisory while 1% absolute coverage, image spans,
+12 corners, 50% corner fraction, and marker scale remain hard-gated. `legacy_strict` retains its
+original 5% coverage hard gate. Final calibration under the new policy additionally requires
+per-frame observability and final shared-pose observability while retaining reprojection, pose
+repeatability, split-half stability, and native-depth sanity.
 The release CLI requires exactly 60 preflight frames. Fixed provisioning records the
 selected target detection policy explicitly in `target.detection_policy`; existing-board
 provisioning additionally requires native-depth sanity to finish with status `PASS`.
@@ -126,13 +135,19 @@ camera-rig target validate-artifact \
   --target .local/targets/charuco_a4_v1/target_spec.json \
   --artifact .local/artifacts/charuco-live \
   --stream color \
+  --policy uncertainty_validated \
   --report .local/reports/charuco-live.json \
   --overlays .local/overlays/charuco-live
 ```
 
 Reports persist complete `TargetObservation` records, aggregate 2D detection quality,
-and static-board temporal pixel jitter. Overlays are diagnostics only and never feed
-the detector or later calibration. Capture acceptance uses a 5% median coverage floor,
-matching the detector's per-frame floor. Coverage remains the convex-hull area of the
-detected ChArUco corners divided by the full image area; the acceptance report records
-the applied threshold alongside every check.
+static-board temporal pixel jitter, and—for `uncertainty_validated`—per-frame and aggregate pose
+observability. Overlays are diagnostics only and never feed the detector or later calibration.
+Coverage remains the convex-hull area of detected ChArUco corners divided by the full image area.
+The new policy records `coverage.hard_gate: false`, the observed value, and the 5% recommendation.
+
+For a 500 x 700 mm, 5 x 7 target with 100 mm squares, 75 mm markers, and `DICT_4X4_50`,
+`uncertainty_validated` is the recommended single-camera policy when the camera must stay outside
+the robot workspace or view the board obliquely. The large board does not automatically pass:
+marker pixel scale, corner localization, uncertainty, ambiguity, repeatability, split-half, and
+native-depth checks remain mandatory.

@@ -76,6 +76,7 @@ package-dir = { "" = "src" }
   "docs/fixed-camera-provisioning.md",
   "docs/downstream-integration.md",
   "docs/public-api.md",
+  "docs/pose-observability-design.md",
 ]
 
 [tool.setuptools.packages.find]

@@ -107,6 +107,7 @@ camera-rig target validate-artifact \
   --target .local/targets/charuco_a4_v1/target_spec.json \
   --artifact .local/artifacts/sequence \
   --stream color \
+  --policy uncertainty_validated \
   --report .local/reports/target-validation.json \
   --overlays .local/overlays/target-validation
 ```
@@ -133,6 +134,20 @@ pose repeatability rather than recalibrating intrinsics. See
 [fixed-camera calibration](docs/fixed-camera-calibration.md),
 [fixed-camera provisioning](docs/fixed-camera-provisioning.md), and
 [calibration quality](docs/calibration-quality.md).
+
+For new fixed-camera deployments, `target.detection_policy: uncertainty_validated` is recommended.
+Coverage is still reported as operator guidance and a target-size warning, but it is not pose
+accuracy and is not a hard gate in this policy. Acceptance instead requires detection integrity,
+PnP, scaled-Jacobian observability, bounded conditional pose uncertainty, resolved planar-pose
+ambiguity, reprojection, temporal repeatability, split-half stability, and native-depth sanity.
+Low coverage does not guarantee a pass; it only stops coverage alone from rejecting an otherwise
+well-observed pose. `legacy_strict` and `pose_validated` retain their historical behavior.
+
+The policy is especially useful for the 500 x 700 mm, 5 x 7, 100 mm-square, 75 mm-marker,
+`DICT_4X4_50` board when a D435i must remain outside the robot workspace or view it obliquely.
+Board size never creates an automatic pass: marker pixel scale, localization, uncertainty, and all
+physical checks still apply. Raw-stream validation is an independent prerequisite and is never
+bypassed by pose observability.
 
 `TargetDetector` is a hardware-independent plugin contract. The ChArUco implementation
 returns image points, stable point IDs, persisted canonical target points, and 2D quality

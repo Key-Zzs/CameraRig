@@ -102,6 +102,7 @@ camera-rig target validate-artifact \
   --target .local/targets/charuco_a4_v1/target_spec.json \
   --artifact .local/artifacts/sequence \
   --stream color \
+  --policy uncertainty_validated \
   --report .local/reports/target-validation.json \
   --overlays .local/overlays/target-validation
 ```
@@ -126,6 +127,17 @@ camera-rig provision validate \
 [固定相机外参](docs/fixed-camera-calibration.md)、
 [固定相机配置](docs/fixed-camera-provisioning.md) 与
 [标定质量](docs/calibration-quality.md)。
+
+新的固定相机部署推荐设置 `target.detection_policy: uncertainty_validated`。coverage 仍用于操作员
+引导和标定板尺寸诊断，但 coverage 不等于位姿精度，在此策略中也不是硬门槛。核心验收改为检测
+完整性、PnP、缩放 Jacobian 可观测性、有界条件位姿不确定度、平面位姿歧义、重投影、时间重复性、
+split-half 稳定性和原生深度 sanity。低 coverage 并不保证 PASS；它只是不再因 coverage 数值本身
+拒绝一个实际可观的位姿。`legacy_strict` 与 `pose_validated` 的历史语义保持不变。
+
+当 D435i 因机械臂工作空间避障必须放在较远位置或倾斜观察时，该策略尤其适合 500 x 700 mm、
+5 x 7、100 mm 方格、75 mm marker、`DICT_4X4_50` 大板。但大板不会自动 PASS：marker 像素
+尺度、角点定位、位姿不确定度以及所有物理检查仍必须通过。原始数据流验证是独立前置门槛，
+`uncertainty_validated` 不会绕过或修改它。
 
 `TargetDetector` 是硬件无关的插件契约。ChArUco 实现返回图像点、稳定 point ID、持久化的
 目标板 canonical 点和二维质量指标，不估计目标位姿或相机外参。打印和验证细节见
