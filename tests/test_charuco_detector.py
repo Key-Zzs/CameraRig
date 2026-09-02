@@ -9,6 +9,7 @@ import pytest
 from camera_rig.core.errors import ContractError
 from camera_rig.targets.charuco.detector import CharucoDetector
 from camera_rig.targets.io import load_target
+from camera_rig.targets.observation import TargetObservation
 from camera_rig.targets.registry import registry
 
 cv2 = pytest.importorskip("cv2")
@@ -120,6 +121,22 @@ def test_wrong_dictionary_fails_quality_gate(generated_charuco_target: Path) -> 
     observation = wrong.detect(image)
     assert not observation.quality.passed
     assert len(observation.point_ids) < 12
+
+
+def test_zero_corner_observation_round_trips_with_explicit_empty_shapes(
+    generated_charuco_target: Path,
+) -> None:
+    detector, image = _detector_and_canvas(generated_charuco_target)
+    observation = detector.detect(np.full_like(image, 127))
+    assert observation.point_ids == ()
+    assert observation.image_points_px.shape == (0, 2)
+    assert observation.object_points_m.shape == (0, 3)
+    assert observation.quality.passed is False
+
+    restored = TargetObservation.from_dict(observation.to_dict())
+    assert restored.to_dict() == observation.to_dict()
+    assert restored.image_points_px.shape == (0, 2)
+    assert restored.object_points_m.shape == (0, 3)
 
 
 @pytest.mark.parametrize(

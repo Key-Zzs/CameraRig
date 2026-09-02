@@ -98,12 +98,18 @@ class TargetObservation:
                 raise TypeError("quality and metadata must be objects")
             if not all(isinstance(key, str) for key in metadata_value):
                 raise TypeError("metadata keys must be strings")
+            image_points = np.asarray(data["image_points_px"], dtype=np.float64)
+            object_points = np.asarray(data["object_points_m"], dtype=np.float64)
+            if image_points.size == 0:
+                image_points = image_points.reshape(0, 2)
+            if object_points.size == 0:
+                object_points = object_points.reshape(0, 3)
             return cls(
                 plugin_name=_decoded_string(data["plugin_name"], "plugin_name"),
                 target_frame=_decoded_string(data["target_frame"], "target_frame"),
                 point_ids=tuple(_decoded_int(value, "point_ids[]") for value in point_ids_value),
-                image_points_px=np.asarray(data["image_points_px"], dtype=np.float64),
-                object_points_m=np.asarray(data["object_points_m"], dtype=np.float64),
+                image_points_px=image_points,
+                object_points_m=object_points,
                 image_size=(
                     _decoded_int(image_size_value[0], "image_size[0]"),
                     _decoded_int(image_size_value[1], "image_size[1]"),
