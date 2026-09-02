@@ -51,7 +51,7 @@ def test_example_composes_existing_contracts_and_resolves_target_relative_to_yam
     assert config.acquisition.stream_validation_frames == FIXED_PROVISION_STREAM_VALIDATION_FRAMES
     assert config.target.expected_sha256 == ACCEPTED_TARGET_SHA256
     assert config.target.artifact_reference == "../targets/charuco_a4_v1/target_spec.json"
-    assert config.target.detection_policy == "pose_validated"
+    assert config.target.detection_policy == "uncertainty_validated"
     assert (
         config.target.artifact_path
         == (EXAMPLE.parent / "../targets/charuco_a4_v1/target_spec.json").resolve()
@@ -124,6 +124,13 @@ def test_target_detection_policy_is_explicit_and_strict(tmp_path: Path) -> None:
     _mapping(data["target"])["detection_policy"] = "pose_validated"
     assert load_provision_config(_write_yaml(tmp_path, data)).target.detection_policy == (
         "pose_validated"
+    )
+    _mapping(data["target"])["detection_policy"] = "uncertainty_validated"
+    uncertainty_root = tmp_path / "uncertainty"
+    uncertainty_root.mkdir()
+    assert (
+        load_provision_config(_write_yaml(uncertainty_root, data)).target.detection_policy
+        == "uncertainty_validated"
     )
     _mapping(data["target"])["detection_policy"] = "guess"
     invalid = tmp_path / "invalid"

@@ -619,6 +619,110 @@ def test_pose_validated_retains_low_coverage_warning(tmp_path: Path) -> None:
     assert pose_validated.quality.metrics["image_span_y_ratio"] >= 0.10
 
 
+def test_uncertainty_policy_keeps_sub_one_percent_coverage_advisory(tmp_path: Path) -> None:
+    generated = tmp_path / "generated"
+    spec = load_charuco_target_spec(_v2_config(tmp_path / "target.yaml", squares_x=6, squares_y=6))
+    generate_target_artifact(spec, generated)
+    target = load_target(generated / "target_spec.json")
+    board = cv2.imread(str(generated / "custom_even_board_board.png"), cv2.IMREAD_GRAYSCALE)
+    assert board is not None
+    small = cv2.resize(board, (100, 100), interpolation=cv2.INTER_NEAREST)
+    canvas = np.full((960, 1280), 255, dtype=np.uint8)
+    canvas[430:530, 590:690] = small
+    legacy = CharucoDetector(target).detect(canvas)
+    pose_validated = CharucoDetector(
+        target, thresholds=CharucoQualityThresholds.pose_validated()
+    ).detect(canvas)
+    uncertainty = CharucoDetector(
+        target, thresholds=CharucoQualityThresholds.uncertainty_validated()
+    ).detect(canvas)
+    assert uncertainty.quality.metrics["coverage_ratio"] < 0.01
+    assert not legacy.quality.passed
+    assert not pose_validated.quality.passed
+    assert uncertainty.quality.passed
+    assert "LOW_COVERAGE_ADVISORY" in uncertainty.quality.warnings
+    assert "LOW_IMAGE_X_SPAN_ADVISORY" in uncertainty.quality.warnings
+    assert "LOW_IMAGE_Y_SPAN_ADVISORY" in uncertainty.quality.warnings
+
+
+def test_uncertainty_capture_acceptance_has_no_coverage_hard_check() -> None:
+    statistics = {"minimum": 0.001, "median": 0.002, "maximum": 0.003, "mean": 0.002}
+    aggregate = {
+        "success_ratio": 1.0,
+        "detected_charuco_corner_count": {
+            "minimum": 24.0,
+            "median": 24.0,
+            "maximum": 24.0,
+            "mean": 24.0,
+        },
+        "corner_fraction": {
+            "minimum": 1.0,
+            "median": 1.0,
+            "maximum": 1.0,
+            "mean": 1.0,
+        },
+        "coverage_ratio": statistics,
+        "temporal_jitter": {
+            "eligible_corner_count": 24,
+            "median_radial_std_px": 0.1,
+            "p95_radial_std_px": 0.2,
+        },
+        "pose_observability": {
+            "solve_success_ratio": 1.0,
+            "observable_frame_ratio": 0.95,
+            "translation_worst_axis_std_mm": {"p95": 3.0},
+            "rotation_worst_axis_std_deg": {"p95": 0.5},
+            "scaled_condition_number": {"p95": 50.0},
+            "ambiguous_frame_ratio": 0.0,
+        },
+    }
+    acceptance = _acceptance(aggregate, 60, policy="uncertainty_validated")
+    assert acceptance["passed"] is True
+    assert acceptance["coverage"]["hard_gate"] is False
+    assert "median_coverage_at_least_threshold" not in acceptance["checks"]
+    assert acceptance["recommendations"]["median_coverage_at_least_0_05"] is False
+
+    boundary = json.loads(json.dumps(aggregate))
+    boundary["pose_observability"]["solve_success_ratio"] = 57 / 60
+    boundary["pose_observability"]["observable_frame_ratio"] = 54 / 60
+    boundary["pose_observability"]["ambiguous_frame_ratio"] = 3 / 60
+    assert _acceptance(boundary, 60, policy="uncertainty_validated")["passed"] is True
+
+    for field, failing_value in (
+        ("solve_success_ratio", 56 / 60),
+        ("observable_frame_ratio", 53 / 60),
+        ("ambiguous_frame_ratio", 4 / 60),
+    ):
+        failing = json.loads(json.dumps(boundary))
+        failing["pose_observability"][field] = failing_value
+        assert _acceptance(failing, 60, policy="uncertainty_validated")["passed"] is False
+
+
+def test_uncertainty_capture_rejects_missing_temporal_tracks() -> None:
+    aggregate = {
+        "success_ratio": 1.0,
+        "detected_charuco_corner_count": {"median": 24.0},
+        "corner_fraction": {"median": 1.0},
+        "coverage_ratio": {"median": 0.01},
+        "temporal_jitter": {
+            "eligible_corner_count": 0,
+            "median_radial_std_px": 0.0,
+            "p95_radial_std_px": 0.0,
+        },
+        "pose_observability": {
+            "solve_success_ratio": 1.0,
+            "observable_frame_ratio": 1.0,
+            "translation_worst_axis_std_mm": {"p95": 1.0},
+            "rotation_worst_axis_std_deg": {"p95": 0.1},
+            "scaled_condition_number": {"p95": 20.0},
+            "ambiguous_frame_ratio": 0.0,
+        },
+    }
+    acceptance = _acceptance(aggregate, 60, policy="uncertainty_validated")
+    assert acceptance["passed"] is False
+    assert acceptance["checks"]["temporal_jitter_has_eligible_corners"] is False
+
+
 def test_pose_validated_capture_acceptance_keeps_five_percent_check_visible() -> None:
     statistics = {"minimum": 0.02, "median": 0.03, "maximum": 0.04, "mean": 0.03}
     aggregate = {
@@ -709,6 +813,27 @@ class _FakeSession:
             host_receive_timestamp_ns=index,
         )
 
+    def get_factory_calibration(self) -> FactoryCalibration:
+        profile = StreamProfile("color", 640, 480, 30, "rgb8")
+        return FactoryCalibration(
+            device=CameraDeviceInfo("synthetic", "head", "D435i", "D435i", "synthetic"),
+            stream_profiles={"color": profile},
+            intrinsics={
+                "color": CameraIntrinsics(
+                    "head/color_optical",
+                    640,
+                    480,
+                    800.0,
+                    800.0,
+                    319.5,
+                    239.5,
+                    "none",
+                )
+            },
+            internal_transforms=(),
+            depth_scale_m_per_unit=0.001,
+        )
+
 
 def test_pose_free_target_preflight_writes_metrics_and_overlays(tmp_path: Path) -> None:
     generated = tmp_path / "generated"
@@ -738,3 +863,33 @@ def test_pose_free_target_preflight_writes_metrics_and_overlays(tmp_path: Path) 
         "middle_frame_000001.png",
         "last_frame_000002.png",
     }
+
+
+def test_uncertainty_live_preflight_uses_same_session_intrinsics(tmp_path: Path) -> None:
+    generated = tmp_path / "generated"
+    spec = load_charuco_target_spec(_v2_config(tmp_path / "target.yaml", squares_x=6, squares_y=6))
+    generate_target_artifact(spec, generated)
+    board = cv2.imread(str(generated / "custom_even_board_board.png"), cv2.IMREAD_GRAYSCALE)
+    assert board is not None
+    resized = cv2.resize(board, (300, 300), interpolation=cv2.INTER_NEAREST)
+    image = np.full((480, 640), 255, dtype=np.uint8)
+    image[90:390, 170:470] = resized
+    config = load_config(Path(__file__).parents[1] / "configs/examples/single_camera_contract.yaml")
+    session = _FakeSession(image)
+    report = run_target_preflight(
+        camera_config=config,
+        target_path=generated / "target_spec.json",
+        frames=60,
+        stream="color",
+        policy="uncertainty_validated",
+        report_path=tmp_path / "preflight.json",
+        overlays_path=tmp_path / "overlays",
+        session_factory=lambda _config: session,
+    )
+    assert session.index == 60
+    assert report["pose_observability_used"] is True
+    assert report["status"] == "PASS"
+    assert report["acceptance"]["coverage"]["hard_gate"] is False  # type: ignore[index]
+    pose = report["metrics"]["pose_observability"]  # type: ignore[index]
+    assert pose["solve_success_ratio"] == 1.0
+    assert pose["observable_frame_ratio"] == 1.0

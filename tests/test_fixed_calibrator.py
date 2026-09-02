@@ -26,6 +26,7 @@ from camera_rig.calibration.fixed.config import (
     FixedCalibrationConfig,
     FixedSolverThresholds,
 )
+from camera_rig.calibration.fixed.quality import evaluate_fixed_calibration_quality
 from camera_rig.calibration.pose import project_points_px
 from camera_rig.core.device_info import CameraDeviceInfo
 from camera_rig.core.errors import ArtifactError, ContractError
@@ -272,6 +273,89 @@ def test_fixed_calibrator_recovers_pose_rejects_outlier_and_builds_chain(
     write_fixed_calibration(path, artifact)
     restored = load_and_validate_fixed_calibration(path)
     assert restored.quality.passed
+
+
+def test_uncertainty_policy_gates_frames_and_final_shared_pose() -> None:
+    legacy = _detection()
+    detection = replace(
+        legacy,
+        acceptance={
+            "passed": True,
+            "policy": "uncertainty_validated",
+            "thresholds": {},
+            "checks": {"uncertainty_capture_passed": True},
+        },
+    )
+    factory = _factory()
+    artifact = FixedCameraCalibrator().calibrate(
+        _config(),
+        detection,
+        factory,
+        target_spec_sha256=TARGET_SHA,
+        capture_manifest_sha256=CAPTURE_SHA,
+        factory_calibration_sha256=_artifact_sha(factory.to_dict()),
+        target_detection_sha256=_artifact_sha(detection.to_dict()),
+        print_provenance=_print_provenance(),
+        native_depth_evaluator=lambda _pose, _indices: {"status": "PASS"},
+    )
+    assert artifact.quality.passed
+    assert artifact.aggregate["pose_policy"] == "uncertainty_validated"
+    assert artifact.aggregate["observable_frame_ratio"] == pytest.approx(1.0)
+    final = artifact.aggregate["final_pose_observability"]
+    assert isinstance(final, dict) and final["passed"] is True
+    assert final["effective_rank"] == 6
+    assert final["candidate_ambiguity"]["valid_candidate_count"] == 2
+    assert final["candidate_ambiguity"]["second_candidate_available"] is True
+    assert all(
+        "observability" in summary
+        for summary in artifact.per_frame_pose_summary
+        if summary["T_camera_from_target"] is not None
+    )
+    assert artifact.quality.metrics["checks"]["final_pose_observability"] is True  # type: ignore[index]
+
+    one_valid_candidate = dict(final)
+    one_valid_candidate["candidate_ambiguity"] = {
+        **final["candidate_ambiguity"],
+        "valid_candidate_count": 1,
+        "second_candidate_available": False,
+        "second_candidate_index": None,
+        "ambiguous": False,
+    }
+    aggregate = artifact.aggregate
+    quality = evaluate_fixed_calibration_quality(
+        thresholds=_config().solver,
+        frame_count=6,
+        accepted_frames=int(aggregate["accepted_frames"]),
+        global_reprojection=aggregate["reprojection"]["global"],
+        pose_repeatability=aggregate["pose_repeatability"],
+        split_half=aggregate["split_half"],
+        native_depth_sanity=aggregate["native_depth_sanity"],
+        pose_policy="uncertainty_validated",
+        final_pose_observability=one_valid_candidate,
+        observable_frame_ratio=float(aggregate["observable_frame_ratio"]),
+        ambiguous_frame_ratio=float(aggregate["ambiguous_frame_ratio"]),
+    )
+    assert quality.metrics["checks"]["final_pose_unambiguous"] is True  # type: ignore[index]
+
+    no_valid_candidate = dict(one_valid_candidate)
+    no_valid_candidate["candidate_ambiguity"] = {
+        **one_valid_candidate["candidate_ambiguity"],
+        "valid_candidate_count": 0,
+    }
+    no_candidate_quality = evaluate_fixed_calibration_quality(
+        thresholds=_config().solver,
+        frame_count=6,
+        accepted_frames=int(aggregate["accepted_frames"]),
+        global_reprojection=aggregate["reprojection"]["global"],
+        pose_repeatability=aggregate["pose_repeatability"],
+        split_half=aggregate["split_half"],
+        native_depth_sanity=aggregate["native_depth_sanity"],
+        pose_policy="uncertainty_validated",
+        final_pose_observability=no_valid_candidate,
+        observable_frame_ratio=float(aggregate["observable_frame_ratio"]),
+        ambiguous_frame_ratio=float(aggregate["ambiguous_frame_ratio"]),
+    )
+    assert no_candidate_quality.metrics["checks"]["final_pose_unambiguous"] is False  # type: ignore[index]
 
 
 def test_fixed_calibrator_native_depth_failure_is_fail_closed() -> None:

@@ -6,10 +6,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import camera_rig.targets.validation as target_validation
 from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
 from camera_rig.artifacts.target_detection import load_and_validate_target_detection
 from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.core.device_info import CameraDeviceInfo
+from camera_rig.core.errors import ArtifactError
 from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame, StreamFrame
 from camera_rig.core.intrinsics import CameraIntrinsics
@@ -18,10 +20,32 @@ from camera_rig.core.stream import StreamProfile
 from camera_rig.core.timestamps import SingleDeviceSyncReport
 from camera_rig.core.transforms import RigidTransform
 from camera_rig.targets.observation import TargetObservation
+from camera_rig.targets.pose_acceptance import aggregate_pose_diagnostics
 from camera_rig.targets.validation import detect_image, validate_capture_artifact_target
 
 cv2 = pytest.importorskip("cv2")
 pytestmark = pytest.mark.charuco
+
+
+def test_rank_deficient_pose_diagnostic_is_aggregated_fail_closed() -> None:
+    aggregate = aggregate_pose_diagnostics(
+        [
+            {
+                "solve_success": True,
+                "observable": False,
+                "observability": {
+                    "translation_worst_axis_std_mm": None,
+                    "rotation_worst_axis_std_deg": None,
+                    "scaled_condition_number": None,
+                    "candidate_ambiguity": {"ambiguous": False},
+                    "failure_reasons": ["POSE_OBSERVABILITY_RANK_DEFICIENT"],
+                },
+            }
+        ]
+    )
+    assert aggregate["solve_success_ratio"] == 1.0
+    assert aggregate["observable_frame_ratio"] == 0.0
+    assert aggregate["translation_worst_axis_std_mm"]["count"] == 0
 
 
 def _canvas(target_root: Path) -> np.ndarray:
@@ -183,3 +207,63 @@ def test_capture_report_persists_observations_and_temporal_jitter(
     for item in report["per_frame"]:  # type: ignore[union-attr]
         observation = TargetObservation.from_dict(item["observation"])
         assert observation.point_ids == tuple(range(24))
+
+
+def test_uncertainty_capture_report_persists_pose_observability(
+    generated_charuco_target: Path, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "capture"
+    image = _canvas(generated_charuco_target)
+    write_snapshot(
+        artifact,
+        _frames(image, 3),
+        _factory(),
+        {"copy_frames": True},
+        {"source": "unit-test"},
+        include_previews=False,
+    )
+    report_path = tmp_path / "report.json"
+    report = validate_capture_artifact_target(
+        target_path=generated_charuco_target / "target_spec.json",
+        artifact_path=artifact,
+        stream="color",
+        report_path=report_path,
+        overlays_path=tmp_path / "overlays",
+        policy="uncertainty_validated",
+    )
+    assert report["acceptance"]["policy"] == "uncertainty_validated"  # type: ignore[index]
+    assert report["acceptance"]["coverage"]["hard_gate"] is False  # type: ignore[index]
+    pose = report["aggregate"]["pose_observability"]  # type: ignore[index]
+    assert pose["solve_success_ratio"] == 1.0
+    assert pose["observable_frame_ratio"] == 1.0
+    assert all("pose_diagnostic" in item for item in report["per_frame"])  # type: ignore[union-attr]
+    restored = load_and_validate_target_detection(report_path)
+    assert all(frame.pose_diagnostic is not None for frame in restored.per_frame)
+
+
+def test_uncertainty_capture_fails_closed_when_intrinsics_are_unavailable(
+    generated_charuco_target: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact = tmp_path / "capture"
+    write_snapshot(
+        artifact,
+        _frames(_canvas(generated_charuco_target), 3),
+        _factory(),
+        {"copy_frames": True},
+        {"source": "unit-test"},
+        include_previews=False,
+    )
+
+    def unavailable(_path: object) -> None:
+        raise ArtifactError("unavailable")
+
+    monkeypatch.setattr(target_validation, "load_and_validate_factory_calibration", unavailable)
+    with pytest.raises(ArtifactError, match="POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE"):
+        validate_capture_artifact_target(
+            target_path=generated_charuco_target / "target_spec.json",
+            artifact_path=artifact,
+            stream="color",
+            report_path=tmp_path / "report.json",
+            overlays_path=tmp_path / "overlays",
+            policy="uncertainty_validated",
+        )
