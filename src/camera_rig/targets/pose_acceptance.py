@@ -166,7 +166,7 @@ def uncertainty_capture_acceptance(
             "median_corner_fraction": minimum_median_corner_fraction,
             "median_jitter_px": maximum_median_jitter_px,
             "p95_jitter_px": maximum_p95_jitter_px,
-            **release.to_dict(),
+            **release.pose_acceptance_dict(),
         },
         "checks": checks,
         "coverage": {

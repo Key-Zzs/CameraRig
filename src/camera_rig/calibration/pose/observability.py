@@ -25,6 +25,10 @@ class UncertaintyValidatedThresholds:
 
     preset: str = "uncertainty_validated_v1"
     pixel_noise_floor_px: float = 0.25
+    maximum_gross_frame_rmse_px: float = 1.5
+    maximum_gross_frame_p95_px: float = 2.0
+    maximum_gross_final_rmse_px: float = 1.5
+    maximum_gross_final_p95_px: float = 2.0
     maximum_frame_translation_worst_std_mm: float = 5.0
     maximum_frame_rotation_worst_std_deg: float = 2.0
     maximum_final_translation_worst_std_mm: float = 2.0
@@ -42,6 +46,10 @@ class UncertaintyValidatedThresholds:
             raise ContractError("unsupported pose-observability release preset")
         positive = (
             self.pixel_noise_floor_px,
+            self.maximum_gross_frame_rmse_px,
+            self.maximum_gross_frame_p95_px,
+            self.maximum_gross_final_rmse_px,
+            self.maximum_gross_final_p95_px,
             self.maximum_frame_translation_worst_std_mm,
             self.maximum_frame_rotation_worst_std_deg,
             self.maximum_final_translation_worst_std_mm,
@@ -76,6 +84,10 @@ class UncertaintyValidatedThresholds:
         return {
             "preset": self.preset,
             "pixel_noise_floor_px": self.pixel_noise_floor_px,
+            "maximum_gross_frame_rmse_px": self.maximum_gross_frame_rmse_px,
+            "maximum_gross_frame_p95_px": self.maximum_gross_frame_p95_px,
+            "maximum_gross_final_rmse_px": self.maximum_gross_final_rmse_px,
+            "maximum_gross_final_p95_px": self.maximum_gross_final_p95_px,
             "maximum_frame_translation_worst_std_mm": (self.maximum_frame_translation_worst_std_mm),
             "maximum_frame_rotation_worst_std_deg": self.maximum_frame_rotation_worst_std_deg,
             "maximum_final_translation_worst_std_mm": (self.maximum_final_translation_worst_std_mm),
@@ -87,6 +99,14 @@ class UncertaintyValidatedThresholds:
             "ambiguity_minimum_delta_chi2": self.ambiguity_minimum_delta_chi2,
             "ambiguity_material_translation_mm": self.ambiguity_material_translation_mm,
             "ambiguity_material_rotation_deg": self.ambiguity_material_rotation_deg,
+        }
+
+    def pose_acceptance_dict(self) -> dict[str, object]:
+        """Return thresholds used by target pose acceptance, excluding fixed-only gross gates."""
+        return {
+            key: value
+            for key, value in self.to_dict().items()
+            if not key.startswith("maximum_gross_")
         }
 
 

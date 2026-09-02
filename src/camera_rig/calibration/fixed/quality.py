@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from camera_rig.calibration.fixed.config import FixedSolverThresholds
+from camera_rig.calibration.fixed.viability import evaluate_fixed_pose_final_reprojection
 from camera_rig.calibration.pose import UncertaintyValidatedThresholds
 from camera_rig.core.quality import QualityReport
 
@@ -20,6 +21,7 @@ def evaluate_fixed_calibration_quality(
     final_pose_observability: dict[str, object] | None = None,
     observable_frame_ratio: float | None = None,
     ambiguous_frame_ratio: float | None = None,
+    require_native_depth_pass: bool = False,
 ) -> QualityReport:
     """Evaluate every persisted hard gate without silently skipping unavailable evidence."""
     accepted_ratio = accepted_frames / frame_count if frame_count else 0.0
@@ -32,26 +34,60 @@ def evaluate_fixed_calibration_quality(
     rotation_p95 = _number(rotation.get("p95"))
     split_translation = _number(split_half.get("translation_delta_mm"))
     split_rotation = _number(split_half.get("rotation_delta_deg"))
-    checks = {
+    reprojection_decision = evaluate_fixed_pose_final_reprojection(
+        global_reprojection=global_reprojection,
+        thresholds=thresholds,
+        pose_policy=pose_policy,
+    )
+    reprojection_checks = _mapping(reprojection_decision.get("checks"))
+    checks: dict[str, bool] = {
         "minimum_accepted_frames": accepted_frames >= thresholds.minimum_accepted_frames,
         "minimum_accepted_ratio": accepted_ratio >= thresholds.minimum_accepted_ratio,
-        "global_reprojection_rmse": global_rmse is not None
-        and global_rmse <= thresholds.maximum_frame_rmse_px,
-        "global_reprojection_p95": global_p95 is not None
-        and global_p95 <= thresholds.maximum_frame_p95_px,
-        "pose_translation_p95": translation_p95 is not None
-        and translation_p95 <= thresholds.maximum_pose_translation_p95_mm,
-        "pose_rotation_p95": rotation_p95 is not None
-        and rotation_p95 <= thresholds.maximum_pose_rotation_p95_deg,
-        "split_translation_delta": split_translation is not None
-        and split_translation <= thresholds.maximum_split_translation_delta_mm,
-        "split_rotation_delta": split_rotation is not None
-        and split_rotation <= thresholds.maximum_split_rotation_delta_deg,
-        "native_depth_sanity": depth_status in {"PASS", "SKIPPED_WITH_WARNING"},
     }
     release = None
     if pose_policy == "uncertainty_validated":
         release = UncertaintyValidatedThresholds()
+        checks.update(
+            {
+                "gross_global_reprojection_rmse": (
+                    reprojection_checks.get("rmse_within_applied_threshold") is True
+                ),
+                "gross_global_reprojection_p95": (
+                    reprojection_checks.get("p95_within_applied_threshold") is True
+                ),
+            }
+        )
+    else:
+        # Preserve the historical order of legacy failure reasons in persisted artifacts.
+        checks.update(
+            {
+                "global_reprojection_rmse": (
+                    reprojection_checks.get("rmse_within_applied_threshold") is True
+                ),
+                "global_reprojection_p95": (
+                    reprojection_checks.get("p95_within_applied_threshold") is True
+                ),
+            }
+        )
+    checks.update(
+        {
+            "pose_translation_p95": translation_p95 is not None
+            and translation_p95 <= thresholds.maximum_pose_translation_p95_mm,
+            "pose_rotation_p95": rotation_p95 is not None
+            and rotation_p95 <= thresholds.maximum_pose_rotation_p95_deg,
+            "split_translation_delta": split_translation is not None
+            and split_translation <= thresholds.maximum_split_translation_delta_mm,
+            "split_rotation_delta": split_rotation is not None
+            and split_rotation <= thresholds.maximum_split_rotation_delta_deg,
+            "native_depth_sanity": (
+                depth_status == "PASS"
+                if require_native_depth_pass
+                else depth_status in {"PASS", "SKIPPED_WITH_WARNING"}
+            ),
+        }
+    )
+    if pose_policy == "uncertainty_validated":
+        assert release is not None
         final = _mapping(final_pose_observability)
         final_failures = final.get("failure_reasons")
         final_ambiguity = _mapping(final.get("candidate_ambiguity"))
@@ -88,7 +124,16 @@ def evaluate_fixed_calibration_quality(
                 ),
             }
         )
-    failure_reason_list = [name for name, passed in checks.items() if not passed]
+    failure_reason_list: list[str] = []
+    for name, passed in checks.items():
+        if passed:
+            continue
+        if name == "gross_global_reprojection_rmse":
+            failure_reason_list.append("GROSS_FINAL_REPROJECTION_RMSE_EXCEEDED")
+        elif name == "gross_global_reprojection_p95":
+            failure_reason_list.append("GROSS_FINAL_REPROJECTION_P95_EXCEEDED")
+        else:
+            failure_reason_list.append(name)
     if release is not None:
         if observable_frame_ratio is None or (
             observable_frame_ratio < release.minimum_observable_frame_ratio
@@ -117,11 +162,13 @@ def evaluate_fixed_calibration_quality(
         "accepted_ratio": accepted_ratio,
         "global_reprojection_rmse_px": global_rmse,
         "global_reprojection_p95_px": global_p95,
+        "reprojection_decision": reprojection_decision,
         "pose_translation_p95_mm": translation_p95,
         "pose_rotation_p95_deg": rotation_p95,
         "split_translation_delta_mm": split_translation,
         "split_rotation_delta_deg": split_rotation,
         "native_depth_status": depth_status,
+        "require_native_depth_pass": require_native_depth_pass,
         "checks": checks,
     }
     persisted_thresholds = thresholds.to_dict()

@@ -23,6 +23,12 @@ from camera_rig.calibration.fixed.aggregation import (
 from camera_rig.calibration.fixed.artifact import FixedCalibrationArtifact
 from camera_rig.calibration.fixed.config import FixedCalibrationConfig
 from camera_rig.calibration.fixed.quality import evaluate_fixed_calibration_quality
+from camera_rig.calibration.fixed.residuals import evaluate_residual_vector_field
+from camera_rig.calibration.fixed.viability import (
+    evaluate_fixed_pose_final_reprojection,
+    evaluate_fixed_pose_frame_viability,
+    reprojection_policy_name,
+)
 from camera_rig.calibration.pose import (
     PlanarPoseEstimate,
     PlanarPoseEstimator,
@@ -41,6 +47,56 @@ from camera_rig.core.transforms import RigidTransform
 from camera_rig.targets.observation import TargetObservation
 
 _TRANSFORM_ATOL = 1e-7
+
+
+class FixedCalibrationFrameGateError(ContractError):
+    """Expected fail-closed outcome carrying frame-gate diagnostics for preflight."""
+
+    def __init__(
+        self,
+        summaries: list[dict[str, object]],
+        *,
+        config: FixedCalibrationConfig,
+        pose_policy: str,
+    ) -> None:
+        super().__init__("fixed calibration has no frame passing the pose frame gates")
+        self.summaries = tuple(dict(item) for item in summaries)
+        self.config = config
+        self.pose_policy = pose_policy
+
+    def to_evaluation_dict(self) -> dict[str, object]:
+        return {
+            "status": "failed_before_shared_pose",
+            "solver": {
+                "method": self.config.solver.method,
+                "refinement": self.config.solver.refinement,
+                "thresholds": self.config.solver.to_dict(),
+                "pose_policy": self.pose_policy,
+                "reprojection_policy": {
+                    "name": reprojection_policy_name(self.pose_policy),
+                },
+            },
+            "per_frame_pose_summary": list(self.summaries),
+            "aggregate": {
+                "accepted_frames": 0,
+                "accepted_ratio": 0.0,
+            },
+            "quality": {
+                "passed": False,
+                "metrics": {
+                    "frame_count": len(self.summaries),
+                    "accepted_frames": 0,
+                    "accepted_ratio": 0.0,
+                },
+                "thresholds": self.config.solver.to_dict(),
+                "warnings": [],
+                "failure_reasons": [
+                    "minimum_accepted_frames",
+                    "minimum_accepted_ratio",
+                    "NO_FRAME_PASSED_FRAME_GATE",
+                ],
+            },
+        }
 
 
 class FixedCameraCalibrator:
@@ -77,7 +133,7 @@ class FixedCameraCalibrator:
         detection_intrinsics, reference_frame, detection_from_reference = inputs
         print_evidence = _validated_print_provenance(print_provenance)
         acceptance = target_detection.acceptance or {}
-        pose_policy = acceptance.get("policy", "legacy_strict")
+        pose_policy = str(acceptance.get("policy", "legacy_strict"))
         uncertainty_policy = pose_policy == "uncertainty_validated"
 
         estimates: dict[int, PlanarPoseEstimate] = {}
@@ -90,7 +146,7 @@ class FixedCameraCalibrator:
                 frame.observation,
                 detection_intrinsics,
                 config,
-                uncertainty_policy=uncertainty_policy,
+                pose_policy=pose_policy,
             )
             summaries.append(summary)
             if estimate is not None:
@@ -98,7 +154,11 @@ class FixedCameraCalibrator:
                 if summary["accepted"] is True:
                     frame_gate_indices.append(frame.frame_index)
         if not frame_gate_indices:
-            raise ContractError("fixed calibration has no frame passing the pose frame gates")
+            raise FixedCalibrationFrameGateError(
+                summaries,
+                config=config,
+                pose_policy=pose_policy,
+            )
 
         frame_gate_poses = [
             estimates[frame_index].T_camera_from_target for frame_index in frame_gate_indices
@@ -140,6 +200,7 @@ class FixedCameraCalibrator:
             )
         final_pose = final_refinement.T_camera_from_target
         final_pose_observability = None
+        final_residual_diagnostics = None
         if uncertainty_policy:
             final_objects = np.vstack(
                 [
@@ -185,6 +246,11 @@ class FixedCameraCalibrator:
                 thresholds=UncertaintyValidatedThresholds(),
                 scope="final",
             ).to_dict()
+            final_residual_diagnostics = evaluate_residual_vector_field(
+                stacked_observation,
+                final_pose,
+                detection_intrinsics,
+            )
         depth_diagnostic = _validated_depth_diagnostic(
             native_depth_evaluator(final_pose, tuple(inlier_indices))
         )
@@ -234,10 +300,16 @@ class FixedCameraCalibrator:
             pose_repeatability=repeatability,
             split_half=split_half,
             native_depth_sanity=depth_diagnostic,
-            pose_policy=str(pose_policy),
+            pose_policy=pose_policy,
             final_pose_observability=final_pose_observability,
             observable_frame_ratio=observable_frame_ratio if uncertainty_policy else None,
             ambiguous_frame_ratio=ambiguous_frame_ratio if uncertainty_policy else None,
+            require_native_depth_pass=print_evidence.get("source_type") == "existing_physical",
+        )
+        final_reprojection_decision = evaluate_fixed_pose_final_reprojection(
+            global_reprojection=_mapping(reprojection["global"]),
+            thresholds=config.solver,
+            pose_policy=pose_policy,
         )
 
         workspace_from_detection = config.T_workspace_from_target.compose(final_pose.inverse())
@@ -295,6 +367,30 @@ class FixedCameraCalibrator:
                 "method": config.solver.method,
                 "refinement": config.solver.refinement,
                 "thresholds": config.solver.to_dict(),
+                "pose_policy": pose_policy,
+                "reprojection_policy": {
+                    "name": reprojection_policy_name(pose_policy),
+                    "legacy_precision_thresholds": {
+                        "maximum_frame_rmse_px": config.solver.maximum_frame_rmse_px,
+                        "maximum_frame_p95_px": config.solver.maximum_frame_p95_px,
+                    },
+                    "frame_applied_thresholds": (
+                        {
+                            "maximum_frame_rmse_px": (
+                                UncertaintyValidatedThresholds().maximum_gross_frame_rmse_px
+                            ),
+                            "maximum_frame_p95_px": (
+                                UncertaintyValidatedThresholds().maximum_gross_frame_p95_px
+                            ),
+                        }
+                        if uncertainty_policy
+                        else {
+                            "maximum_frame_rmse_px": config.solver.maximum_frame_rmse_px,
+                            "maximum_frame_p95_px": config.solver.maximum_frame_p95_px,
+                        }
+                    ),
+                    "final_decision": final_reprojection_decision,
+                },
                 "camera_model": dict(final_refinement.camera_model_diagnostics),
                 "pose_medoid_frame_index": medoid_frame_index,
                 "pose_inlier_policy": {
@@ -316,6 +412,10 @@ class FixedCameraCalibrator:
                         "observable_frame_ratio": observable_frame_ratio,
                         "ambiguous_frame_ratio": ambiguous_frame_ratio,
                         "final_pose_observability": final_pose_observability,
+                        "residual_diagnostics": {
+                            "role": "diagnostic_only_not_a_hard_gate",
+                            "final_shared_pose": final_residual_diagnostics,
+                        },
                     }
                     if uncertainty_policy
                     else {}
@@ -338,18 +438,13 @@ class FixedCameraCalibrator:
         intrinsics: CameraIntrinsics,
         config: FixedCalibrationConfig,
         *,
-        uncertainty_policy: bool = False,
+        pose_policy: str = "legacy_strict",
     ) -> tuple[dict[str, object], PlanarPoseEstimate | None]:
-        reasons: list[str] = []
+        uncertainty_policy = pose_policy == "uncertainty_validated"
         corner_count = len(observation.point_ids)
-        if not detection_success:
-            reasons.append(
-                "DETECTION_INTEGRITY_FAILED" if uncertainty_policy else "target_detection_failed"
-            )
-        if corner_count < config.solver.minimum_corners_per_frame:
-            reasons.append("INSUFFICIENT_CORNERS" if uncertainty_policy else "insufficient_corners")
         summary: dict[str, object] = {
             "frame_index": frame_index,
+            "detection_success": detection_success,
             "corner_count": corner_count,
             "candidate_count": 0,
             "selected_candidate": None,
@@ -371,37 +466,50 @@ class FixedCameraCalibrator:
             "frame_gate_accepted": False,
             "pose_inlier": False,
             "accepted": False,
-            "failure_reasons": reasons,
+            "reprojection_policy": reprojection_policy_name(pose_policy),
+            "reprojection_decision": None,
+            "observability_decision": None,
+            "residual_diagnostics": None,
+            "failure_reasons": [],
         }
-        if reasons:
+        if not detection_success or corner_count < config.solver.minimum_corners_per_frame:
+            viability = evaluate_fixed_pose_frame_viability(
+                frame_index=frame_index,
+                detection_success=detection_success,
+                observation=observation,
+                estimate=None,
+                config=config,
+                pose_policy=pose_policy,
+            )
+            summary.update(viability)
             return summary, None
         try:
             estimate = self._pose_estimator.estimate(observation, intrinsics)
         except ContractError as error:
-            reasons.append(
-                f"POSE_SOLVE_FAILED: {error}"
-                if uncertainty_policy
-                else f"pose_solve_failed: {error}"
+            viability = evaluate_fixed_pose_frame_viability(
+                frame_index=frame_index,
+                detection_success=detection_success,
+                observation=observation,
+                estimate=None,
+                config=config,
+                pose_policy=pose_policy,
+                pose_solve_error=str(error),
             )
+            summary.update(viability)
             return summary, None
         reprojection = estimate.reprojection
-        if reprojection.rmse_px > config.solver.maximum_frame_rmse_px:
-            reasons.append(
-                "REPROJECTION_RMSE_EXCEEDED"
-                if uncertainty_policy
-                else "frame_reprojection_rmse_exceeded"
-            )
-        if reprojection.p95_px > config.solver.maximum_frame_p95_px:
-            reasons.append(
-                "REPROJECTION_P95_EXCEEDED"
-                if uncertainty_policy
-                else "frame_reprojection_p95_exceeded"
-            )
-        if uncertainty_policy:
-            reasons.extend(estimate.observability.failure_reasons)
-        accepted = not reasons
+        viability = evaluate_fixed_pose_frame_viability(
+            frame_index=frame_index,
+            detection_success=detection_success,
+            observation=observation,
+            estimate=estimate,
+            config=config,
+            pose_policy=pose_policy,
+        )
+        accepted = viability["accepted"] is True
         summary.update(
             {
+                **viability,
                 "candidate_count": estimate.candidate_count,
                 "selected_candidate": estimate.selected_candidate_index,
                 "candidates": [item.to_dict() for item in estimate.candidates],
@@ -415,6 +523,11 @@ class FixedCameraCalibrator:
                 "reprojection_median_px": reprojection.median_px,
                 "reprojection_p95_px": reprojection.p95_px,
                 "reprojection_max_px": reprojection.maximum_px,
+                "residual_diagnostics": evaluate_residual_vector_field(
+                    observation,
+                    estimate.T_camera_from_target,
+                    intrinsics,
+                ),
                 "frame_gate_accepted": accepted,
                 "pose_inlier": accepted,
                 "accepted": accepted,
