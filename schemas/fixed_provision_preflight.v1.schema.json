@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_provision_preflight.v1.schema.json",
+  "title": "CameraRig fixed-provision viability preflight v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "status",
+    "would_publish_fixed_provision",
+    "camera",
+    "target_fingerprint",
+    "pose_policy",
+    "evaluation_core",
+    "raw_stream",
+    "target",
+    "fixed_pose_frames",
+    "reprojection",
+    "observability",
+    "final",
+    "per_frame",
+    "failure_reasons",
+    "publication"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-provision-preflight.v1"},
+    "attempt_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "would_publish_fixed_provision": {"type": "boolean"},
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_name"],
+      "properties": {"logical_name": {"type": "string", "minLength": 1}}
+    },
+    "target_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pose_policy": {
+      "enum": ["legacy_strict", "pose_validated", "uncertainty_validated"]
+    },
+    "evaluation_core": {"const": "run_fixed_provision_workflow"},
+    "raw_stream": {
+      "type": "object",
+      "required": ["status", "metrics", "failure_reasons"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL"]},
+        "metrics": {"type": "object"},
+        "failure_reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["PASS", "FAIL", "NOT_EVALUATED"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["PASS", "FAIL"]}}},
+          "then": {
+            "required": [
+              "detection_success_ratio",
+              "corner_statistics",
+              "coverage_advisory",
+              "acceptance"
+            ]
+          },
+          "else": {"required": ["failure_reasons"]}
+        }
+      ]
+    },
+    "fixed_pose_frames": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["EVALUATED", "NOT_EVALUATED"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "EVALUATED"}}},
+          "then": {
+            "required": [
+              "total",
+              "solved",
+              "frame_gate_accepted",
+              "pose_inlier_accepted",
+              "required_frames",
+              "required_ratio",
+              "failure_reason_counts"
+            ]
+          },
+          "else": {"required": ["failure_reasons"]}
+        }
+      ]
+    },
+    "reprojection": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["EVALUATED", "NOT_EVALUATED"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "EVALUATED"}}},
+          "then": {
+            "required": [
+              "policy_actually_used",
+              "frame_rmse_px",
+              "frame_p95_px",
+              "legacy_thresholds",
+              "applied_frame_thresholds",
+              "applied_final_thresholds",
+              "applied_policy"
+            ]
+          }
+        }
+      ]
+    },
+    "observability": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["EVALUATED", "NOT_EVALUATED", "NOT_APPLICABLE_FOR_POLICY"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "EVALUATED"}}},
+          "then": {
+            "required": [
+              "translation_worst_std_mm",
+              "rotation_worst_std_deg",
+              "scaled_condition_number",
+              "ambiguous_frames"
+            ]
+          }
+        }
+      ]
+    },
+    "final": {
+      "type": "object",
+      "required": ["status", "decision", "failure_reasons"],
+      "properties": {
+        "status": {"enum": ["EVALUATED", "NOT_EVALUATED"]},
+        "decision": {"enum": ["WOULD_PASS", "WOULD_FAIL"]},
+        "failure_reasons": {"type": "array", "items": {"type": "string"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "EVALUATED"}}},
+          "then": {
+            "required": [
+              "global_reprojection",
+              "reprojection_decision",
+              "final_pose_observability",
+              "pose_repeatability",
+              "split_half",
+              "native_depth"
+            ]
+          }
+        }
+      ]
+    },
+    "per_frame": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "frame_index",
+          "detection_success",
+          "frame_gate_accepted",
+          "accepted",
+          "failure_reasons"
+        ],
+        "properties": {
+          "frame_index": {"type": "integer", "minimum": 0},
+          "detection_success": {"type": "boolean"},
+          "frame_gate_accepted": {"type": "boolean"},
+          "accepted": {"type": "boolean"},
+          "failure_reasons": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "failure_reasons": {"type": "array", "items": {"type": "string"}},
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "camera_bundle_written",
+        "fixed_provision_written",
+        "canonical_output_modified"
+      ],
+      "properties": {
+        "camera_bundle_written": {"const": false},
+        "fixed_provision_written": {"const": false},
+        "canonical_output_modified": {"const": false}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "PASS"}}},
+      "then": {
+        "properties": {
+          "would_publish_fixed_provision": {"const": true},
+          "failure_reasons": {"maxItems": 0},
+          "raw_stream": {"properties": {"status": {"const": "PASS"}}},
+          "target": {"properties": {"status": {"const": "PASS"}}},
+          "fixed_pose_frames": {"properties": {"status": {"const": "EVALUATED"}}},
+          "reprojection": {"properties": {"status": {"const": "EVALUATED"}}},
+          "final": {
+            "properties": {
+              "status": {"const": "EVALUATED"},
+              "decision": {"const": "WOULD_PASS"}
+            }
+          },
+          "per_frame": {"minItems": 1}
+        }
+      },
+      "else": {
+        "properties": {
+          "would_publish_fixed_provision": {"const": false},
+          "final": {"properties": {"decision": {"const": "WOULD_FAIL"}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {"const": "PASS"},
+          "pose_policy": {"const": "uncertainty_validated"}
+        },
+        "required": ["status", "pose_policy"]
+      },
+      "then": {
+        "properties": {
+          "observability": {"properties": {"status": {"const": "EVALUATED"}}},
+          "final": {
+            "properties": {
+              "final_pose_observability": {"type": "object"},
+              "reprojection_decision": {"type": "object"}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

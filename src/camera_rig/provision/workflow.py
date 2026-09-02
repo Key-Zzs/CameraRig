@@ -30,7 +30,10 @@ from camera_rig.calibration.fixed.artifact import (
     FixedCalibrationArtifact,
     write_fixed_calibration,
 )
-from camera_rig.calibration.fixed.calibrator import FixedCameraCalibrator
+from camera_rig.calibration.fixed.calibrator import (
+    FixedCalibrationFrameGateError,
+    FixedCameraCalibrator,
+)
 from camera_rig.calibration.fixed.depth_sanity import evaluate_native_depth_sanity
 from camera_rig.calibration.fixed.overlays import (
     select_overlay_frames,
@@ -120,6 +123,7 @@ def run_fixed_provision_workflow(
     *,
     dependencies: ProvisionWorkflowDependencies | None = None,
     print_provenance: Mapping[str, object] = _PRINT_PROVENANCE,
+    allow_failed_quality: bool = False,
 ) -> ProvisionWorkflowResult:
     """Run acquisition through fixed calibration inside one caller-owned staging root."""
     root = _prepare_staging_root(staging_root)
@@ -259,48 +263,52 @@ def run_fixed_provision_workflow(
             frame_indices=inlier_indices,
         )
 
-    fixed = deps.fixed_calibrator_factory().calibrate(
-        config.fixed_calibration_config,
-        detection,
-        factory,
-        target_spec_sha256=target.artifact_sha256,
-        capture_manifest_sha256=sha256_file(capture_manifest_path),
-        factory_calibration_sha256=factory_sha256,
-        target_detection_sha256=sha256_file(detection_path),
-        print_provenance=(
-            {
-                "source_type": "existing_physical",
-                "physical_measurement_sha256": existing_measurement_sha256,
-                "geometry_policy": (
-                    "existing physical target uses nominal user-provided and vision-verified "
-                    "measurements persisted in the resolved target artifact"
-                ),
-            }
-            if existing_target_route
-            else print_provenance
-        ),
-        native_depth_evaluator=native_depth_evaluator,
-        provenance={
-            "camera_rig_version": __version__,
-            "workflow": "fixed-provision",
-        },
-    )
-    if existing_target_route:
-        native_depth = fixed.aggregate.get("native_depth_sanity")
-        if not isinstance(native_depth, dict) or native_depth.get("status") != "PASS":
-            raise ContractError(
-                "existing-target provisioning requires native depth sanity status PASS"
-            )
+    try:
+        fixed = deps.fixed_calibrator_factory().calibrate(
+            config.fixed_calibration_config,
+            detection,
+            factory,
+            target_spec_sha256=target.artifact_sha256,
+            capture_manifest_sha256=sha256_file(capture_manifest_path),
+            factory_calibration_sha256=factory_sha256,
+            target_detection_sha256=sha256_file(detection_path),
+            print_provenance=(
+                {
+                    "source_type": "existing_physical",
+                    "physical_measurement_sha256": existing_measurement_sha256,
+                    "geometry_policy": (
+                        "existing physical target uses nominal user-provided and vision-verified "
+                        "measurements persisted in the resolved target artifact"
+                    ),
+                }
+                if existing_target_route
+                else print_provenance
+            ),
+            native_depth_evaluator=native_depth_evaluator,
+            provenance={
+                "camera_rig_version": __version__,
+                "workflow": "fixed-provision",
+            },
+        )
+    except FixedCalibrationFrameGateError as error:
+        atomic_write_json(
+            root / "calibration/fixed_calibration.frame_gate_failed.json",
+            error.to_evaluation_dict(),
+        )
+        raise
     fixed_path = root / "calibration/fixed_calibration.json"
+    persisted_fixed_reference = "calibration/fixed_calibration.json"
     if not fixed.quality.passed:
         failed_path = root / "calibration/fixed_calibration.failed.json"
         atomic_write_json(
             failed_path,
             {"status": "failed", "fixed_calibration": fixed.to_dict()},
         )
-        raise ContractError(
-            f"fixed calibration quality failed: {list(fixed.quality.failure_reasons)}"
-        )
+        persisted_fixed_reference = "calibration/fixed_calibration.failed.json"
+        if not allow_failed_quality:
+            raise ContractError(
+                f"fixed calibration quality failed: {list(fixed.quality.failure_reasons)}"
+            )
     fixed_overlays = _write_fixed_overlays(
         root / "diagnostics/fixed_calibration",
         retained_frames,
@@ -323,7 +331,8 @@ def run_fixed_provision_workflow(
             ),
         },
     )
-    write_fixed_calibration(fixed_path, fixed)
+    if fixed.quality.passed:
+        write_fixed_calibration(fixed_path, fixed)
     return ProvisionWorkflowResult(
         staging_root=root,
         selected_source_indices=acquisition.selected_source_indices,
@@ -337,7 +346,7 @@ def run_fixed_provision_workflow(
             "stream_validation": "reports/stream_validation.json",
             "target_spec": "target/artifact/target_spec.json",
             "target_detection": "target/detection_report.json",
-            "fixed_calibration": "calibration/fixed_calibration.json",
+            "fixed_calibration": persisted_fixed_reference,
         },
         detection_overlays=detection_overlay_files,
         fixed_overlays=fixed_overlays,
