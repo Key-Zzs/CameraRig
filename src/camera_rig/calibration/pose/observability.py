@@ -467,7 +467,7 @@ def projection_jacobian_first_six(
         camera_model.camera_matrix,
         camera_model.distortion_coeffs,
     )
-    result = np.asarray(jacobian, dtype=np.float64)[:, :6].copy()
+    result: FloatArray = np.asarray(jacobian, dtype=np.float64)[:, :6].copy()
     result.setflags(write=False)
     return result
 
