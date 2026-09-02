@@ -34,7 +34,7 @@ def write_snapshot(
     provenance: dict[str, object],
     *,
     include_previews: bool = True,
-    force: bool = False,
+    force: bool = True,
 ) -> dict[str, object]:
     """Write, self-validate, then atomically commit a capture directory."""
     if not frames:
@@ -205,7 +205,7 @@ def _commit_directory(temporary: Path, target: Path, force: bool) -> None:
     if not force:
         raise ArtifactError(f"capture artifact already exists: {target}")
     if target.is_symlink() or not target.is_dir():
-        raise ArtifactError("--force target must be a real artifact directory")
+        raise ArtifactError("capture output must be a real artifact directory")
     backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
     os.replace(target, backup)
     try:

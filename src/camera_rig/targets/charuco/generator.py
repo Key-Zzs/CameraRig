@@ -30,8 +30,8 @@ MM_PER_INCH = 25.4
 def generate_target_artifact(spec: CharucoTargetSpec, output: str | Path) -> dict[str, object]:
     """Generate, self-detect, checksum, and atomically publish a target directory."""
     target = Path(output)
-    if target.exists():
-        raise ArtifactError(f"target artifact already exists: {target}")
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        raise ArtifactError("target output must be a real directory path")
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.parent / f".{target.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
@@ -161,11 +161,25 @@ def generate_target_artifact(spec: CharucoTargetSpec, output: str | Path) -> dic
             checksum_names.append(f"{spec.target_name}_scale_check.pdf")
         lines = [f"{sha256_file(temporary / name)}  {name}" for name in sorted(checksum_names)]
         (temporary / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(temporary, target)
+        _replace_output_directory(temporary, target)
         return report
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
+
+
+def _replace_output_directory(temporary: Path, target: Path) -> None:
+    if not target.exists():
+        os.replace(temporary, target)
+        return
+    backup = target.with_name(f".{target.name}.backup-{uuid.uuid4().hex}")
+    os.replace(target, backup)
+    try:
+        os.replace(temporary, target)
+    except Exception:
+        os.replace(backup, target)
+        raise
+    shutil.rmtree(backup)
 
 
 def _write_print_pdf(spec: CharucoTargetSpec, board_path: Path, path: Path) -> None:

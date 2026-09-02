@@ -15,7 +15,7 @@ def preflight_fixed_provision(
     config: ProvisionConfig,
     *,
     output: str | Path,
-    force: bool = False,
+    force: bool = True,
 ) -> dict[str, object]:
     """Validate every non-hardware input without opening the camera or writing output."""
     target = validate_target_artifact(config.target.artifact_path)
@@ -40,7 +40,7 @@ def preflight_fixed_provision(
             load_and_validate_fixed_provision(destination)
         except ArtifactError as error:
             raise ArtifactError(
-                "--force may replace only an existing validated fixed-provision artifact"
+                "default replacement requires an existing validated fixed-provision artifact"
             ) from error
     _require_runtime_dependencies()
     return {
@@ -62,7 +62,7 @@ def preflight_fixed_provision(
         "target_detection_policy": config.target.detection_policy,
         "reference_stream": config.fixed_calibration_config.reference_stream,
         "output_exists": destination.exists(),
-        "force": force,
+        "overwrite_existing": force,
         "camera_will_open": False,
         "final_artifact_will_be_created": False,
         "optional_dependencies": {

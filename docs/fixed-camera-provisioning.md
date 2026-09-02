@@ -20,8 +20,9 @@ target detection, and fixed-pose solve. The selected source indices are persiste
 
 The output is built in a sibling temporary directory. CameraBundle reload, manifest
 reload, checksums, cross-file identities, safe relative paths, and the exact file set
-must all validate before the directory is published. Existing output is rejected by
-default. `--force` builds and validates the replacement before swapping it into place.
+must all validate before the directory is published. Existing validated output is
+replaced by default after the new artifact fully validates and is atomically swapped
+into place.
 
 Validate a completed artifact with:
 

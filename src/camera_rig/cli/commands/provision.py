@@ -39,11 +39,6 @@ def add_provision_commands(
         action="store_true",
         help="validate all non-hardware inputs without opening the camera or writing output",
     )
-    fixed.add_argument(
-        "--force",
-        action="store_true",
-        help="replace an existing artifact only after the replacement fully validates",
-    )
     fixed.set_defaults(handler=_provision_fixed)
 
     validate = groups.add_parser("validate", help="validate a complete provision artifact")
@@ -53,7 +48,7 @@ def add_provision_commands(
 
 def _provision_fixed(arguments: argparse.Namespace) -> int:
     config, config_sha256 = load_provision_config_with_sha256(arguments.config)
-    plan = preflight_fixed_provision(config, output=arguments.output, force=arguments.force)
+    plan = preflight_fixed_provision(config, output=arguments.output)
     if arguments.dry_run:
         enabled_streams = plan["enabled_streams"]
         if not isinstance(enabled_streams, list) or not all(
@@ -89,7 +84,7 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
         )
         print(
             f"  output_policy: exists={plan.get('output_exists', False)}, "
-            f"force={plan.get('force', False)}, camera_opened=no, output_written=no"
+            "overwrite_existing=yes, camera_opened=no, output_written=no"
         )
         print(f"  optional_dependencies: {dependency_summary}")
         return 0
@@ -140,7 +135,6 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
                 "selection_method": "deterministic_evenly_spaced_inclusive",
                 "workflow": "fixed-provision",
             },
-            force=arguments.force,
         )
     finally:
         if staging.exists():

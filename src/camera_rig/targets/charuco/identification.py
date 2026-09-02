@@ -354,8 +354,8 @@ def register_existing_board(
         artifact_files={},
     )
     destination = Path(output)
-    if destination.exists():
-        raise ArtifactError(f"target artifact already exists: {destination}")
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+        raise ArtifactError("target output must be a real directory path")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.parent / f".{destination.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
@@ -376,11 +376,25 @@ def register_existing_board(
         lines = [f"{sha256_file(temporary / name)}  {name}" for name in payloads]
         (temporary / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
         validate_target_artifact(spec_path)
-        os.replace(temporary, destination)
+        _replace_output_directory(temporary, destination)
         return report
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
+
+
+def _replace_output_directory(temporary: Path, destination: Path) -> None:
+    if not destination.exists():
+        os.replace(temporary, destination)
+        return
+    backup = destination.with_name(f".{destination.name}.backup-{uuid.uuid4().hex}")
+    os.replace(destination, backup)
+    try:
+        os.replace(temporary, destination)
+    except Exception:
+        os.replace(backup, destination)
+        raise
+    shutil.rmtree(backup)
 
 
 def _load_evidence(

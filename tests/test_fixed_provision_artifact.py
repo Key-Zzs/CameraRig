@@ -524,19 +524,19 @@ def test_writer_publishes_exact_validated_layout(
     assert checksum_paths == actual
 
 
-def test_existing_output_fails_without_force_and_preserves_old(
+def test_existing_output_is_replaced_by_default(
     tmp_path: Path, valid_inputs: FixedProvisionArtifactInputs
 ) -> None:
     output = tmp_path / "fixed_camera"
     first = write_fixed_provision_artifact(output, valid_inputs, provenance={"run": "first"})
-    before = (output / "manifest.json").read_bytes()
-    with pytest.raises(ArtifactError, match="already exists"):
-        write_fixed_provision_artifact(output, valid_inputs, provenance={"run": "second"})
-    assert (output / "manifest.json").read_bytes() == before
-    assert load_and_validate_fixed_provision(output).artifact_id == first.artifact_id
+    replacement = write_fixed_provision_artifact(
+        output, valid_inputs, provenance={"run": "second"}
+    )
+    assert replacement.artifact_id != first.artifact_id
+    assert load_and_validate_fixed_provision(output).provenance == {"run": "second"}
 
 
-def test_force_replaces_only_with_a_fully_valid_new_artifact(
+def test_default_replacement_requires_a_fully_valid_new_artifact(
     tmp_path: Path, valid_inputs: FixedProvisionArtifactInputs
 ) -> None:
     output = tmp_path / "fixed_camera"
@@ -551,7 +551,6 @@ def test_force_replaces_only_with_a_fully_valid_new_artifact(
         valid_inputs,
         provenance={"run": "second"},
         artifact_id="22222222-2222-4222-8222-222222222222",
-        force=True,
     )
     assert replacement.artifact_id == "22222222-2222-4222-8222-222222222222"
     assert load_and_validate_fixed_provision(output).provenance == {"run": "second"}
@@ -572,7 +571,7 @@ def test_invalid_replacement_never_disturbs_existing_output(
     atomic_write_json(invalid_fixed, data)
     invalid = replace(valid_inputs, fixed_calibration=invalid_fixed)
     with pytest.raises(ArtifactError, match=r"fixed_calibration|factory_calibration_sha256"):
-        write_fixed_provision_artifact(output, invalid, provenance={"run": "invalid"}, force=True)
+        write_fixed_provision_artifact(output, invalid, provenance={"run": "invalid"})
     restored = load_and_validate_fixed_provision(output)
     assert restored.artifact_id == original.artifact_id
     assert restored.provenance == {"run": "old"}
@@ -763,12 +762,12 @@ def test_output_symlink_is_never_replaced(
     output.symlink_to(real, target_is_directory=True)
     with pytest.raises(ArtifactError, match="real directory"):
         write_fixed_provision_artifact(
-            output, valid_inputs, provenance={"source": "test"}, force=True
+            output, valid_inputs, provenance={"source": "test"}
         )
     assert output.is_symlink()
 
 
-def test_force_never_replaces_an_unowned_real_directory(
+def test_default_replacement_never_replaces_an_unowned_real_directory(
     tmp_path: Path, valid_inputs: FixedProvisionArtifactInputs
 ) -> None:
     output = tmp_path / "unowned"
@@ -776,9 +775,7 @@ def test_force_never_replaces_an_unowned_real_directory(
     user_file = output / "user-file.txt"
     user_file.write_text("preserve")
     with pytest.raises(ArtifactError, match=r"manifest|fixed provision"):
-        write_fixed_provision_artifact(
-            output, valid_inputs, provenance={"source": "test"}, force=True
-        )
+        write_fixed_provision_artifact(output, valid_inputs, provenance={"source": "test"})
     assert user_file.read_text() == "preserve"
 
 
@@ -843,7 +840,7 @@ def test_invalid_overlay_force_failure_preserves_existing_artifact(
         ),
     )
     with pytest.raises(ArtifactError, match="not a valid PNG"):
-        write_fixed_provision_artifact(output, invalid, provenance={"run": "invalid"}, force=True)
+        write_fixed_provision_artifact(output, invalid, provenance={"run": "invalid"})
     restored = load_and_validate_fixed_provision(output)
     assert restored.artifact_id == original.artifact_id
     assert restored.provenance == {"run": "old"}

@@ -257,14 +257,14 @@ def test_factory_camera_identity_mismatch_is_rejected(tmp_path: Path) -> None:
         validate_capture_artifact(root)
 
 
-def test_snapshot_refuses_overwrite_without_force(tmp_path: Path) -> None:
+def test_snapshot_overwrites_existing_artifact_by_default(tmp_path: Path) -> None:
     root = tmp_path / "artifact"
     _write(root, 1)
-    with pytest.raises(ArtifactError, match="already exists"):
-        _write(root, 1)
+    _write(root, 2)
+    assert validate_capture_artifact(root)["frame_count"] == 2
 
 
-def test_snapshot_force_replaces_valid_artifact(tmp_path: Path) -> None:
+def test_snapshot_replaces_valid_artifact_without_an_override_flag(tmp_path: Path) -> None:
     root = tmp_path / "artifact"
     _write(root, 1)
     write_snapshot(
@@ -274,6 +274,5 @@ def test_snapshot_force_replaces_valid_artifact(tmp_path: Path) -> None:
         {"copy_frames": True},
         {"source": "replacement"},
         include_previews=False,
-        force=True,
     )
     assert validate_capture_artifact(root)["frame_count"] == 2

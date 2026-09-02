@@ -252,6 +252,14 @@ def test_odd_row_legacy_candidates_fold_by_proven_equivalence_and_register(
     target = validate_target_artifact(registered / "target_spec.json")
     assert target.dictionary == "DICT_4X4_100"
     assert target.legacy_pattern is False
+    (registered / "stale.txt").write_text("stale", encoding="utf-8")
+    register_existing_board(
+        identification_path=identification,
+        target_name="future_existing_board",
+        target_frame="charuco_target",
+        output=registered,
+    )
+    assert not (registered / "stale.txt").exists()
 
 
 def test_non_equivalent_legacy_candidates_do_not_fold() -> None:

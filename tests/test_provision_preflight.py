@@ -40,18 +40,22 @@ def test_fixed_preflight_is_read_only_and_reports_plan(
     assert not output.exists()
 
 
-def test_fixed_preflight_rejects_existing_output(
+def test_fixed_preflight_accepts_existing_valid_output_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_provision_config(EXAMPLE)
     _patch_target(monkeypatch, config.target.expected_sha256)
     output = tmp_path / "existing"
     output.mkdir()
-    with pytest.raises(ArtifactError, match="already exists"):
-        preflight_fixed_provision(config, output=output)
+    monkeypatch.setattr(
+        "camera_rig.provision.validation.load_and_validate_fixed_provision",
+        lambda _output: object(),
+    )
+    result = preflight_fixed_provision(config, output=output)
+    assert result["overwrite_existing"] is True
 
 
-def test_fixed_preflight_force_rejects_unowned_directory(
+def test_fixed_preflight_default_replacement_rejects_unowned_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_provision_config(EXAMPLE)
@@ -59,8 +63,8 @@ def test_fixed_preflight_force_rejects_unowned_directory(
     output = tmp_path / "unowned"
     output.mkdir()
     (output / "user-file.txt").write_text("preserve")
-    with pytest.raises(ArtifactError, match="only an existing validated"):
-        preflight_fixed_provision(config, output=output, force=True)
+    with pytest.raises(ArtifactError, match="default replacement requires"):
+        preflight_fixed_provision(config, output=output)
     assert (output / "user-file.txt").read_text() == "preserve"
 
 

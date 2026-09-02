@@ -222,7 +222,7 @@ def write_fixed_provision_artifact(
     artifact_id: str | None = None,
     created_at: str | None = None,
     camera_rig_version: str = __version__,
-    force: bool = False,
+    force: bool = True,
 ) -> FixedProvisionManifest:
     """Copy all inputs, self-validate, then publish one complete directory."""
     target = Path(output)
@@ -324,7 +324,7 @@ def _commit_directory(temporary: Path, target: Path, *, force: bool) -> None:
     if not force:
         raise ArtifactError(f"fixed provision artifact already exists: {target}")
     if target.is_symlink() or not target.is_dir():
-        raise ArtifactError("--force target must be a real artifact directory")
+        raise ArtifactError("fixed provision output must be a real artifact directory")
     from camera_rig.provision.validation import load_and_validate_fixed_provision
 
     load_and_validate_fixed_provision(target)
@@ -342,12 +342,12 @@ def _replace_directory(source: Path, target: Path) -> None:
 def _exchange_directories(source: Path, target: Path) -> None:
     """Atomically exchange two sibling directories on Linux, or fail without mutation."""
     if os.name != "posix":
-        raise ArtifactError("atomic --force replacement requires Linux renameat2 support")
+        raise ArtifactError("atomic output replacement requires Linux renameat2 support")
     library = ctypes.CDLL(None, use_errno=True)
     try:
         renameat2 = library.renameat2
     except AttributeError as error:
-        raise ArtifactError("atomic --force replacement requires renameat2 support") from error
+        raise ArtifactError("atomic output replacement requires renameat2 support") from error
     renameat2.argtypes = (
         ctypes.c_int,
         ctypes.c_char_p,

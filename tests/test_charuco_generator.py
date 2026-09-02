@@ -116,3 +116,15 @@ def test_pdf_and_resolved_artifacts_are_deterministic(tmp_path: Path) -> None:
         "checksums.sha256",
     ):
         assert (first / name).read_bytes() == (second / name).read_bytes()
+
+
+def test_generator_overwrites_existing_target_directory_by_default(tmp_path: Path) -> None:
+    spec = load_charuco_target_spec(STANDARD_CONFIG)
+    output = tmp_path / "target"
+    generate_target_artifact(spec, output)
+    (output / "stale.txt").write_text("stale", encoding="utf-8")
+
+    generate_target_artifact(spec, output)
+
+    assert not (output / "stale.txt").exists()
+    validate_target_artifact(output / "target_spec.json")

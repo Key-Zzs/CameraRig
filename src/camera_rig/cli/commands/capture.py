@@ -35,7 +35,6 @@ def add_capture_commands(
     snapshot.add_argument("--config", type=Path, required=True)
     snapshot.add_argument("--frames", type=int, default=1)
     snapshot.add_argument("--output", type=Path, required=True)
-    snapshot.add_argument("--force", action="store_true")
     snapshot.set_defaults(handler=_snapshot)
     return parser
 
@@ -120,7 +119,6 @@ def _snapshot(arguments: argparse.Namespace) -> int:
             "config_sha256": config_hash,
         },
         include_previews=True,
-        force=arguments.force,
     )
     print(f"snapshot: PASS ({manifest['frame_count']} frames)")
     return 0
