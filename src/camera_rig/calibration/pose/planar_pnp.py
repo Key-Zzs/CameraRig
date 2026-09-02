@@ -11,6 +11,12 @@ import numpy.typing as npt
 
 from camera_rig.calibration.pose.camera_model import OpenCVCameraModel, to_opencv_camera_model
 from camera_rig.calibration.pose.dependencies import cv2_module
+from camera_rig.calibration.pose.observability import (
+    PoseAmbiguityCandidate,
+    PoseObservabilityMetrics,
+    UncertaintyValidatedThresholds,
+    evaluate_pose_observability,
+)
 from camera_rig.calibration.pose.refinement import refine_planar_pose_lm
 from camera_rig.calibration.pose.reprojection import ReprojectionMetrics, reprojection_metrics
 from camera_rig.calibration.pose.validation import PoseValidity, validate_planar_pose
@@ -65,6 +71,7 @@ class PlanarPoseEstimate:
     candidate_separations: tuple[CandidateSeparation, ...]
     refined_validity: PoseValidity
     reprojection: ReprojectionMetrics
+    observability: PoseObservabilityMetrics
     camera_model_diagnostics: dict[str, object]
 
     @property
@@ -80,12 +87,20 @@ class PlanarPoseEstimate:
             "candidate_separations": [item.to_dict() for item in self.candidate_separations],
             "refined_validity": self.refined_validity.to_dict(),
             "reprojection": self.reprojection.to_dict(),
+            "observability": self.observability.to_dict(),
             "camera_model": dict(self.camera_model_diagnostics),
         }
 
 
 class PlanarPoseEstimator:
     """Estimate one shared planar target pose from a generic observation."""
+
+    def __init__(
+        self, observability_thresholds: UncertaintyValidatedThresholds | None = None
+    ) -> None:
+        self._observability_thresholds = (
+            observability_thresholds or UncertaintyValidatedThresholds()
+        )
 
     def estimate(
         self, observation: TargetObservation, intrinsics: CameraIntrinsics
@@ -131,6 +146,24 @@ class PlanarPoseEstimator:
                 "LM-refined pose failed physical validation: "
                 f"{list(refined.validity.failure_reasons)}"
             )
+        ambiguity_candidates = tuple(
+            PoseAmbiguityCandidate(
+                index=item.index,
+                T_camera_from_target=item.T_camera_from_target,
+                valid=item.validity.valid,
+                reprojection_sse_px2=float(np.sum(np.square(item.reprojection.residuals_px))),
+            )
+            for item in candidates
+        )
+        observability = evaluate_pose_observability(
+            object_points_m=objects,
+            image_points_px=images,
+            T_camera_from_target=refined.T_camera_from_target,
+            intrinsics=intrinsics,
+            ambiguity_candidates=ambiguity_candidates,
+            thresholds=self._observability_thresholds,
+            scope="frame",
+        )
         return PlanarPoseEstimate(
             T_camera_from_target=refined.T_camera_from_target,
             selected_candidate_index=selected.index,
@@ -138,6 +171,7 @@ class PlanarPoseEstimator:
             candidate_separations=_candidate_separations(candidates),
             refined_validity=refined.validity,
             reprojection=refined.reprojection,
+            observability=observability,
             camera_model_diagnostics=camera_model.diagnostics,
         )
 
