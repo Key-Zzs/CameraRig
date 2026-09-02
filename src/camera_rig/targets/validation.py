@@ -110,9 +110,7 @@ def validate_capture_artifact_target(
         if not isinstance(factory_reference, str):
             raise ArtifactError("POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE")
         try:
-            factory = load_and_validate_factory_calibration(
-                Path(artifact_path) / factory_reference
-            )
+            factory = load_and_validate_factory_calibration(Path(artifact_path) / factory_reference)
             intrinsics = factory.calibration.intrinsics[stream]
         except (ArtifactError, KeyError) as error:
             raise ArtifactError("POSE_OBSERVABILITY_INTRINSICS_UNAVAILABLE") from error

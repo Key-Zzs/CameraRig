@@ -115,8 +115,7 @@ def run_target_preflight(
         )
         recommendation = (
             "ADEQUATE_WITH_LOW_COVERAGE_WARNING"
-            if acceptance["passed"] is True
-            and any(item.quality.warnings for item in observations)
+            if acceptance["passed"] is True and any(item.quality.warnings for item in observations)
             else "ADEQUATE"
             if acceptance["passed"] is True
             else "POSE_OBSERVABILITY_FAILED"

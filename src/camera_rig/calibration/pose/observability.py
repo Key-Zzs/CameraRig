@@ -76,13 +76,9 @@ class UncertaintyValidatedThresholds:
         return {
             "preset": self.preset,
             "pixel_noise_floor_px": self.pixel_noise_floor_px,
-            "maximum_frame_translation_worst_std_mm": (
-                self.maximum_frame_translation_worst_std_mm
-            ),
+            "maximum_frame_translation_worst_std_mm": (self.maximum_frame_translation_worst_std_mm),
             "maximum_frame_rotation_worst_std_deg": self.maximum_frame_rotation_worst_std_deg,
-            "maximum_final_translation_worst_std_mm": (
-                self.maximum_final_translation_worst_std_mm
-            ),
+            "maximum_final_translation_worst_std_mm": (self.maximum_final_translation_worst_std_mm),
             "maximum_final_rotation_worst_std_deg": self.maximum_final_rotation_worst_std_deg,
             "maximum_scaled_condition_number": self.maximum_scaled_condition_number,
             "minimum_pose_solve_ratio": self.minimum_pose_solve_ratio,
@@ -185,9 +181,7 @@ class PoseObservabilityMetrics:
                 else None
             ),
             "rotation_std_xyz_deg": (
-                list(self.rotation_std_xyz_deg)
-                if self.rotation_std_xyz_deg is not None
-                else None
+                list(self.rotation_std_xyz_deg) if self.rotation_std_xyz_deg is not None else None
             ),
             "translation_std_xyz_mm": (
                 list(self.translation_std_xyz_mm)
@@ -252,9 +246,7 @@ def evaluate_pose_observability(
         raise ContractError("pose-observability target characteristic scale must be positive")
     parameter_scale = np.diag([1.0, 1.0, 1.0, target_scale_m, target_scale_m, target_scale_m])
     scaled_jacobian = projection_jacobian @ parameter_scale
-    _left, singular_values, right_transpose = np.linalg.svd(
-        scaled_jacobian, full_matrices=False
-    )
+    _left, singular_values, right_transpose = np.linalg.svd(scaled_jacobian, full_matrices=False)
     singular_values = np.asarray(singular_values, dtype=np.float64)
     if singular_values.shape != (6,) or not np.isfinite(singular_values).all():
         raise ContractError("pose-observability SVD did not return six finite singular values")
@@ -296,11 +288,7 @@ def evaluate_pose_observability(
         # by physical pose-error metrics: Exp(r + dr) ~= Exp(J_l(r) dr) Exp(r).
         tangent_from_parameters = np.eye(6, dtype=np.float64)
         tangent_from_parameters[:3, :3] = _so3_left_jacobian(rvec.reshape(3))
-        covariance = (
-            tangent_from_parameters
-            @ covariance_rvec_tvec
-            @ tangent_from_parameters.T
-        )
+        covariance = tangent_from_parameters @ covariance_rvec_tvec @ tangent_from_parameters.T
         covariance = (covariance + covariance.T) / 2.0
         rotation_block = covariance[:3, :3]
         translation_block = covariance[3:, 3:]
@@ -320,8 +308,7 @@ def evaluate_pose_observability(
             math.degrees(math.sqrt(max(float(np.max(np.linalg.eigvalsh(rotation_block))), 0.0)))
         )
         translation_worst = float(
-            1000.0
-            * math.sqrt(max(float(np.max(np.linalg.eigvalsh(translation_block))), 0.0))
+            1000.0 * math.sqrt(max(float(np.max(np.linalg.eigvalsh(translation_block))), 0.0))
         )
 
     maximum_translation, maximum_rotation = release.uncertainty_limits(scope)
@@ -425,19 +412,16 @@ def evaluate_pose_ambiguity(
     best, second = valid[:2]
     delta_chi2 = max(
         0.0,
-        (second.reprojection_sse_px2 - best.reprojection_sse_px2)
-        / (pixel_noise_sigma_px**2),
+        (second.reprojection_sse_px2 - best.reprojection_sse_px2) / (pixel_noise_sigma_px**2),
     )
     translation_mm = float(
         1000.0
         * np.linalg.norm(
-            best.T_camera_from_target.matrix[:3, 3]
-            - second.T_camera_from_target.matrix[:3, 3]
+            best.T_camera_from_target.matrix[:3, 3] - second.T_camera_from_target.matrix[:3, 3]
         )
     )
     relative_rotation = (
-        best.T_camera_from_target.matrix[:3, :3].T
-        @ second.T_camera_from_target.matrix[:3, :3]
+        best.T_camera_from_target.matrix[:3, :3].T @ second.T_camera_from_target.matrix[:3, :3]
     )
     cosine = float(np.clip((np.trace(relative_rotation) - 1.0) / 2.0, -1.0, 1.0))
     rotation_deg = math.degrees(math.acos(cosine))

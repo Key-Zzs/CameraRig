@@ -65,14 +65,12 @@ def evaluate_fixed_calibration_quality(
                 "final_pose_observability": final.get("passed") is True,
                 "final_pose_full_rank": final.get("effective_rank") == 6,
                 "final_pose_translation_uncertainty": (
-                    "POSE_TRANSLATION_UNCERTAINTY_EXCEEDED"
-                    not in final_failures
+                    "POSE_TRANSLATION_UNCERTAINTY_EXCEEDED" not in final_failures
                     if isinstance(final_failures, list)
                     else False
                 ),
                 "final_pose_rotation_uncertainty": (
-                    "POSE_ROTATION_UNCERTAINTY_EXCEEDED"
-                    not in final_failures
+                    "POSE_ROTATION_UNCERTAINTY_EXCEEDED" not in final_failures
                     if isinstance(final_failures, list)
                     else False
                 ),

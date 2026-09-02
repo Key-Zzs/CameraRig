@@ -64,9 +64,7 @@ def aggregate_pose_diagnostics(diagnostics: list[dict[str, object]]) -> dict[str
         metrics = _mapping(item.get("observability"), "observability")
         translation = metrics.get("translation_worst_axis_std_mm")
         if translation is not None:
-            translations.append(
-                _finite_number(translation, "translation_worst_axis_std_mm")
-            )
+            translations.append(_finite_number(translation, "translation_worst_axis_std_mm"))
         rotation = metrics.get("rotation_worst_axis_std_deg")
         if rotation is not None:
             rotations.append(_finite_number(rotation, "rotation_worst_axis_std_deg"))
@@ -109,9 +107,7 @@ def uncertainty_capture_acceptance(
     fractions = _mapping(aggregate.get("corner_fraction"), "corner fraction")
     jitter = _mapping(aggregate.get("temporal_jitter"), "temporal jitter")
     pose = _mapping(aggregate.get("pose_observability"), "pose observability")
-    translation = _mapping(
-        pose.get("translation_worst_axis_std_mm"), "translation uncertainty"
-    )
+    translation = _mapping(pose.get("translation_worst_axis_std_mm"), "translation uncertainty")
     rotation = _mapping(pose.get("rotation_worst_axis_std_deg"), "rotation uncertainty")
     condition = _mapping(pose.get("scaled_condition_number"), "condition number")
     checks = {
@@ -132,12 +128,10 @@ def uncertainty_capture_acceptance(
             <= maximum_median_jitter_px
         ),
         "p95_jitter_at_most_1_0_px": (
-            _finite_number(jitter.get("p95_radial_std_px"), "p95 jitter")
-            <= maximum_p95_jitter_px
+            _finite_number(jitter.get("p95_radial_std_px"), "p95 jitter") <= maximum_p95_jitter_px
         ),
         "temporal_jitter_has_eligible_corners": (
-            _finite_number(jitter.get("eligible_corner_count"), "eligible corner count")
-            >= 1
+            _finite_number(jitter.get("eligible_corner_count"), "eligible corner count") >= 1
         ),
         "pose_solve_ratio_at_least_threshold": (
             _finite_number(pose.get("solve_success_ratio"), "pose solve ratio")
@@ -148,8 +142,7 @@ def uncertainty_capture_acceptance(
             >= release.minimum_observable_frame_ratio
         ),
         "p95_translation_uncertainty_at_most_threshold": (
-            _optional_p95(translation)
-            <= release.maximum_frame_translation_worst_std_mm
+            _optional_p95(translation) <= release.maximum_frame_translation_worst_std_mm
         ),
         "p95_rotation_uncertainty_at_most_threshold": (
             _optional_p95(rotation) <= release.maximum_frame_rotation_worst_std_deg

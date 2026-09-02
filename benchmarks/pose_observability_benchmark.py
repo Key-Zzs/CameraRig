@@ -153,9 +153,7 @@ def _sweep_case(
                 index=item.index,
                 T_camera_from_target=item.T_camera_from_target,
                 valid=item.validity.valid,
-                reprojection_sse_px2=float(
-                    np.sum(np.square(item.reprojection.residuals_px))
-                ),
+                reprojection_sse_px2=float(np.sum(np.square(item.reprojection.residuals_px))),
             )
             for item in estimate.candidates
         )
@@ -170,9 +168,7 @@ def _sweep_case(
         elapsed_ms: float | None = (time.perf_counter() - before) * 1000.0
         translation_error_mm = float(
             1000.0
-            * np.linalg.norm(
-                estimate.T_camera_from_target.matrix[:3, 3] - pose.matrix[:3, 3]
-            )
+            * np.linalg.norm(estimate.T_camera_from_target.matrix[:3, 3] - pose.matrix[:3, 3])
         )
         rotation_error_deg = _rotation_error_deg(estimate.T_camera_from_target, pose)
         result: dict[str, object] = {
@@ -258,9 +254,7 @@ def _monte_carlo(trials: int) -> list[dict[str, object]]:
                 index=item.index,
                 T_camera_from_target=item.T_camera_from_target,
                 valid=item.validity.valid,
-                reprojection_sse_px2=float(
-                    np.sum(np.square(item.reprojection.residuals_px))
-                ),
+                reprojection_sse_px2=float(np.sum(np.square(item.reprojection.residuals_px))),
             )
             for item in nominal_estimate.candidates
         )
@@ -299,12 +293,8 @@ def _monte_carlo(trials: int) -> list[dict[str, object]]:
             except Exception:
                 failures += 1
                 continue
-            translation_error = (
-                estimate.T_camera_from_target.matrix[:3, 3] - pose.matrix[:3, 3]
-            )
-            relative = (
-                estimate.T_camera_from_target.matrix[:3, :3] @ pose.matrix[:3, :3].T
-            )
+            translation_error = estimate.T_camera_from_target.matrix[:3, 3] - pose.matrix[:3, 3]
+            relative = estimate.T_camera_from_target.matrix[:3, :3] @ pose.matrix[:3, :3].T
             rotation_vector, _jacobian = _cv2().Rodrigues(relative)
             rotation_error = np.asarray(rotation_vector).reshape(3)
             translation_errors.append(translation_error)
@@ -321,9 +311,9 @@ def _monte_carlo(trials: int) -> list[dict[str, object]]:
         rotation_array = np.asarray(rotation_errors, dtype=np.float64)
         empirical_translation = _worst_axis_std(translation_array) * 1000.0
         empirical_rotation = math.degrees(_worst_axis_std(rotation_array))
-        local_empirical_translation = _worst_axis_std(
-            np.asarray(nonambiguous_translation_errors, dtype=np.float64)
-        ) * 1000.0
+        local_empirical_translation = (
+            _worst_axis_std(np.asarray(nonambiguous_translation_errors, dtype=np.float64)) * 1000.0
+        )
         local_empirical_rotation = math.degrees(
             _worst_axis_std(np.asarray(nonambiguous_rotation_errors, dtype=np.float64))
         )
@@ -337,21 +327,15 @@ def _monte_carlo(trials: int) -> list[dict[str, object]]:
                 "ambiguous_trial_count": ambiguous_trials,
                 "mode_jump_trial_count": mode_jump_trials,
                 "flagged_mode_jump_trial_count": flagged_mode_jump_trials,
-                "all_mode_jumps_flagged_ambiguous": (
-                    mode_jump_trials == flagged_mode_jump_trials
-                ),
+                "all_mode_jumps_flagged_ambiguous": (mode_jump_trials == flagged_mode_jump_trials),
                 "pixel_noise_px": noise_px,
                 "release_prediction_passed": predicted.passed,
                 "prediction_failure_reasons": list(predicted.failure_reasons),
-                "prediction_candidate_ambiguity": (
-                    predicted.candidate_ambiguity.to_dict()
-                ),
+                "prediction_candidate_ambiguity": (predicted.candidate_ambiguity.to_dict()),
                 "coverage_ratio": _coverage(pixels),
                 "predicted_translation_worst_std_mm": predicted_translation,
                 "empirical_all_solved_translation_worst_std_mm": empirical_translation,
-                "empirical_nonambiguous_translation_worst_std_mm": (
-                    local_empirical_translation
-                ),
+                "empirical_nonambiguous_translation_worst_std_mm": (local_empirical_translation),
                 "translation_ratio_nonambiguous_empirical_over_predicted": (
                     local_empirical_translation / predicted_translation
                     if predicted_translation > 0
@@ -407,9 +391,7 @@ def _final_shared_pose_monte_carlo(trials: int) -> list[dict[str, object]]:
                 index=item.index,
                 T_camera_from_target=item.T_camera_from_target,
                 valid=item.validity.valid,
-                reprojection_sse_px2=float(
-                    np.sum(np.square(item.reprojection.residuals_px))
-                ),
+                reprojection_sse_px2=float(np.sum(np.square(item.reprojection.residuals_px))),
             )
             for item in nominal_estimate.candidates
         )
@@ -438,9 +420,7 @@ def _final_shared_pose_monte_carlo(trials: int) -> list[dict[str, object]]:
                 quality=QualityReport(True),
             )
             try:
-                estimate = PlanarPoseEstimator(thresholds).estimate(
-                    observation, _intrinsics()
-                )
+                estimate = PlanarPoseEstimator(thresholds).estimate(observation, _intrinsics())
             except Exception:
                 failures += 1
                 continue
@@ -450,9 +430,9 @@ def _final_shared_pose_monte_carlo(trials: int) -> list[dict[str, object]]:
             relative = estimate.T_camera_from_target.matrix[:3, :3] @ pose.matrix[:3, :3].T
             rotation_vector, _jacobian = _cv2().Rodrigues(relative)
             rotation_errors.append(np.asarray(rotation_vector).reshape(3))
-        empirical_translation = _worst_axis_std(
-            np.asarray(translation_errors, dtype=np.float64)
-        ) * 1000.0
+        empirical_translation = (
+            _worst_axis_std(np.asarray(translation_errors, dtype=np.float64)) * 1000.0
+        )
         empirical_rotation = math.degrees(
             _worst_axis_std(np.asarray(rotation_errors, dtype=np.float64))
         )
@@ -492,9 +472,7 @@ def _points(square_m: float) -> np.ndarray:
     )
 
 
-def _pose(
-    points: np.ndarray, distance_m: float, tilt_deg: float, location: str
-) -> RigidTransform:
+def _pose(points: np.ndarray, distance_m: float, tilt_deg: float, location: str) -> RigidTransform:
     angle = math.radians(tilt_deg)
     rotation_y = np.asarray(
         [
@@ -637,23 +615,19 @@ def _sweep_acceptance_checks(cases: list[dict[str, object]]) -> dict[str, bool]:
         ),
         "all_pose_solves_completed": all(case["solve_success"] is True for case in cases),
         "contains_low_coverage_good_pass": any(
-            float(case["coverage_ratio"]) < 0.01
-            and case["uncertainty_validated_result"] == "PASS"
+            float(case["coverage_ratio"]) < 0.01 and case["uncertainty_validated_result"] == "PASS"
             for case in cases
         ),
         "contains_high_coverage_poor_fail": any(
-            float(case["coverage_ratio"]) > 0.05
-            and case["uncertainty_validated_result"] == "FAIL"
+            float(case["coverage_ratio"]) > 0.05 and case["uncertainty_validated_result"] == "FAIL"
             for case in cases
         ),
         "contains_low_coverage_poor_fail": any(
-            float(case["coverage_ratio"]) < 0.01
-            and case["uncertainty_validated_result"] == "FAIL"
+            float(case["coverage_ratio"]) < 0.01 and case["uncertainty_validated_result"] == "FAIL"
             for case in cases
         ),
         "contains_ambiguous_fail": any(
-            case["ambiguous"] is True
-            and case["uncertainty_validated_result"] == "FAIL"
+            case["ambiguous"] is True and case["uncertainty_validated_result"] == "FAIL"
             for case in cases
         ),
     }

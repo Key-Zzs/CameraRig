@@ -180,9 +180,7 @@ def test_reported_rotation_covariance_is_left_invariant_physical_tangent() -> No
     )
     tangent_from_parameters = np.eye(6)
     tangent_from_parameters[:3, :3] = left_jacobian
-    expected = (
-        tangent_from_parameters @ covariance_parameters @ tangent_from_parameters.T
-    )
+    expected = tangent_from_parameters @ covariance_parameters @ tangent_from_parameters.T
     np.testing.assert_allclose(metrics.covariance_6x6, expected, rtol=2e-12, atol=1e-15)
     assert "left_invariant_camera_rotation_rad" in metrics.parameterization
 
@@ -219,14 +217,10 @@ def test_pixel_noise_distance_and_corner_distribution_have_expected_trends() -> 
         intrinsics=_intrinsics(),
     )
     assert noisy_metrics.pixel_noise_sigma_px > clean_metrics.pixel_noise_sigma_px
-    assert (
-        noisy_metrics.translation_worst_axis_std_mm
-        > clean_metrics.translation_worst_axis_std_mm
-    )
+    assert noisy_metrics.translation_worst_axis_std_mm > clean_metrics.translation_worst_axis_std_mm
     assert far_metrics.translation_worst_axis_std_mm > clean_metrics.translation_worst_axis_std_mm
     assert (
-        partial_metrics.translation_worst_axis_std_mm
-        > clean_metrics.translation_worst_axis_std_mm
+        partial_metrics.translation_worst_axis_std_mm > clean_metrics.translation_worst_axis_std_mm
     )
 
 
@@ -324,7 +318,4 @@ def test_larger_physical_target_improves_information_at_same_distance() -> None:
         T_camera_from_target=pose,
         intrinsics=_intrinsics(),
     )
-    assert (
-        large_metrics.translation_worst_axis_std_mm
-        < small_metrics.translation_worst_axis_std_mm
-    )
+    assert large_metrics.translation_worst_axis_std_mm < small_metrics.translation_worst_axis_std_mm

@@ -172,9 +172,7 @@ class FixedCameraCalibrator:
                     index=item.index,
                     T_camera_from_target=item.T_camera_from_target,
                     valid=item.validity.valid,
-                    reprojection_sse_px2=float(
-                        np.sum(np.square(item.reprojection.residuals_px))
-                    ),
+                    reprojection_sse_px2=float(np.sum(np.square(item.reprojection.residuals_px))),
                 )
                 for item in final_candidate_estimate.candidates
             )
@@ -346,9 +344,7 @@ class FixedCameraCalibrator:
         corner_count = len(observation.point_ids)
         if not detection_success:
             reasons.append(
-                "DETECTION_INTEGRITY_FAILED"
-                if uncertainty_policy
-                else "target_detection_failed"
+                "DETECTION_INTEGRITY_FAILED" if uncertainty_policy else "target_detection_failed"
             )
         if corner_count < config.solver.minimum_corners_per_frame:
             reasons.append("INSUFFICIENT_CORNERS" if uncertainty_policy else "insufficient_corners")
