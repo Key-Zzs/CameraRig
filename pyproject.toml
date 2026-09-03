@@ -69,6 +69,11 @@ package-dir = { "" = "src" }
   "configs/examples/charuco_custom_page_v2.yaml",
   "configs/examples/fixed_provision_contract.yaml",
 ]
+"share/camera-rig/benchmarks" = [
+  "benchmarks/pose_observability_benchmark.py",
+  "benchmarks/reprojection_policy_holdout.py",
+  "benchmarks/reprojection_policy_sweep.py",
+]
 "share/camera-rig/docs" = [
   "docs/calibration-quality.md",
   "docs/charuco-target.md",

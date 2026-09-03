@@ -64,6 +64,24 @@ called frozen until real A/B/C residual fields and margins have been reviewed. H
 structured fields must still pass observability, repeatability, split-half, and native-depth
 evidence; the vector-field report remains diagnostic-only in this version.
 
+The development stress test in `benchmarks/reprojection_policy_holdout.py` additionally evaluates
+the tighter 0.75/1.50 px candidate over three analytically constructed synthetic intrinsics/poses,
+12/20/24/35-corner layouts, 128 independent seeds per cell, and separate 60-frame shared-pose
+trials. It uses iid Gaussian components whose expected vector RMSE equals the named level, then
+reports worst-cell rather than pooled Wilson bounds. This evidence is exploratory, not an
+independent confirmatory holdout, because its protocol was corrected after earlier samples were
+examined.
+
+The corrected stress test keeps the 0.75/1.50 candidate at **HOLD**. At the 0.75 px positive
+boundary it accepts only 1,204/1,536 frame trials; its worst-cell frame false-reject Wilson upper
+bound is 0.413 and the derived 60-frame capture-failure upper bound is effectively one. It accepts
+only 405/768 positive final/shared-pose trials, with a worst-cell false-reject upper bound of 0.663.
+All 6,144 frame and 384 final 3 px structured negatives are rejected in these independent
+synthetic geometries, but the positive robustness rules fail. The per-frame policy result covers
+only scalar reprojection, uncertainty, and ambiguity; it is not mislabeled as the complete
+fixed-provision workflow. No gross threshold is frozen by this stress test, and residual structure
+remains diagnostic-only.
+
 The 0.25 px floor is deliberately conservative relative to the seven accepted/replayed
 real captures (temporal-jitter p95 0.026--0.033 px) and is independently checked by the
 0.25 px Monte Carlo cases. Those real captures have frame translation p95 0.480--1.190 mm,
