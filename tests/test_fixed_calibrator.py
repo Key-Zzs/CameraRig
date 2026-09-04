@@ -312,6 +312,13 @@ def test_uncertainty_policy_gates_frames_and_final_shared_pose() -> None:
         if summary["T_camera_from_target"] is not None
     )
     assert artifact.quality.metrics["checks"]["final_pose_observability"] is True  # type: ignore[index]
+    policy = artifact.solver["reprojection_policy"]
+    assert policy["release_state"] == "HOLD"  # type: ignore[index]
+    assert policy["candidate_successor"]["preset"] == "uncertainty_validated_v2"  # type: ignore[index]
+    assert policy["candidate_successor"]["production_eligible"] is False  # type: ignore[index]
+    structured = artifact.aggregate["residual_diagnostics"]["final_shared_pose"]  # type: ignore[index]
+    assert structured["eligible_corner_count"] == 24  # type: ignore[index]
+    assert structured["structured_metrics"]["scope"] == "final"  # type: ignore[index]
 
     one_valid_candidate = dict(final)
     one_valid_candidate["candidate_ambiguity"] = {

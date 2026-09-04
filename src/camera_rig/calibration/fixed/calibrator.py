@@ -24,6 +24,11 @@ from camera_rig.calibration.fixed.artifact import FixedCalibrationArtifact
 from camera_rig.calibration.fixed.config import FixedCalibrationConfig
 from camera_rig.calibration.fixed.quality import evaluate_fixed_calibration_quality
 from camera_rig.calibration.fixed.residuals import evaluate_residual_vector_field
+from camera_rig.calibration.fixed.structured_residuals import (
+    StructuredReprojectionPolicy,
+    evaluate_final_shared_structured_residuals,
+    evaluate_observation_structured_residuals,
+)
 from camera_rig.calibration.fixed.viability import (
     evaluate_fixed_pose_final_reprojection,
     evaluate_fixed_pose_frame_viability,
@@ -58,13 +63,17 @@ class FixedCalibrationFrameGateError(ContractError):
         *,
         config: FixedCalibrationConfig,
         pose_policy: str,
+        uncertainty_thresholds: UncertaintyValidatedThresholds,
     ) -> None:
         super().__init__("fixed calibration has no frame passing the pose frame gates")
         self.summaries = tuple(dict(item) for item in summaries)
         self.config = config
         self.pose_policy = pose_policy
+        self.uncertainty_thresholds = uncertainty_thresholds
 
     def to_evaluation_dict(self) -> dict[str, object]:
+        uncertainty = self.uncertainty_thresholds
+        structured_policy = StructuredReprojectionPolicy()
         return {
             "status": "failed_before_shared_pose",
             "solver": {
@@ -74,6 +83,18 @@ class FixedCalibrationFrameGateError(ContractError):
                 "pose_policy": self.pose_policy,
                 "reprojection_policy": {
                     "name": reprojection_policy_name(self.pose_policy),
+                    **(
+                        {
+                            "preset": uncertainty.preset,
+                            "release_state": uncertainty.release_state,
+                            "release_criteria_version": uncertainty.release_criteria_version,
+                            "release_manifest_sha256": uncertainty.release_manifest_sha256,
+                            "structured_gate_version": uncertainty.structured_gate_version,
+                            "candidate_successor": structured_policy.to_dict(),
+                        }
+                        if self.pose_policy == "uncertainty_validated"
+                        else {}
+                    ),
                 },
             },
             "per_frame_pose_summary": list(self.summaries),
@@ -102,8 +123,33 @@ class FixedCalibrationFrameGateError(ContractError):
 class FixedCameraCalibrator:
     """Calibrate one fixed camera from generic persisted target observations."""
 
-    def __init__(self, pose_estimator: PlanarPoseEstimator | None = None) -> None:
-        self._pose_estimator = pose_estimator or PlanarPoseEstimator()
+    def __init__(
+        self,
+        pose_estimator: PlanarPoseEstimator | None = None,
+        uncertainty_thresholds: UncertaintyValidatedThresholds | None = None,
+    ) -> None:
+        if pose_estimator is not None:
+            estimator_thresholds = pose_estimator.observability_thresholds
+            if (
+                uncertainty_thresholds is not None
+                and uncertainty_thresholds != estimator_thresholds
+            ):
+                raise ContractError(
+                    "injected pose estimator and fixed calibrator must use identical "
+                    "uncertainty thresholds"
+                )
+            self._uncertainty_thresholds = estimator_thresholds
+            self._pose_estimator = pose_estimator
+        else:
+            self._uncertainty_thresholds = (
+                uncertainty_thresholds or UncertaintyValidatedThresholds()
+            )
+            self._pose_estimator = PlanarPoseEstimator(self._uncertainty_thresholds)
+
+    @property
+    def uncertainty_thresholds(self) -> UncertaintyValidatedThresholds:
+        """Return the thresholds shared by estimation, viability, and provenance."""
+        return self._uncertainty_thresholds
 
     def calibrate(
         self,
@@ -135,6 +181,7 @@ class FixedCameraCalibrator:
         acceptance = target_detection.acceptance or {}
         pose_policy = str(acceptance.get("policy", "legacy_strict"))
         uncertainty_policy = pose_policy == "uncertainty_validated"
+        board_reference_points = _canonical_target_geometry(target_detection)
 
         estimates: dict[int, PlanarPoseEstimate] = {}
         summaries: list[dict[str, object]] = []
@@ -147,6 +194,7 @@ class FixedCameraCalibrator:
                 detection_intrinsics,
                 config,
                 pose_policy=pose_policy,
+                board_reference_points_m=board_reference_points,
             )
             summaries.append(summary)
             if estimate is not None:
@@ -158,6 +206,7 @@ class FixedCameraCalibrator:
                 summaries,
                 config=config,
                 pose_policy=pose_policy,
+                uncertainty_thresholds=self._uncertainty_thresholds,
             )
 
         frame_gate_poses = [
@@ -201,6 +250,7 @@ class FixedCameraCalibrator:
         final_pose = final_refinement.T_camera_from_target
         final_pose_observability = None
         final_residual_diagnostics = None
+        final_structured_diagnostics = None
         if uncertainty_policy:
             final_objects = np.vstack(
                 [
@@ -243,11 +293,16 @@ class FixedCameraCalibrator:
                 T_camera_from_target=final_pose,
                 intrinsics=detection_intrinsics,
                 ambiguity_candidates=final_ambiguity_candidates,
-                thresholds=UncertaintyValidatedThresholds(),
+                thresholds=self._uncertainty_thresholds,
                 scope="final",
             ).to_dict()
             final_residual_diagnostics = evaluate_residual_vector_field(
                 stacked_observation,
+                final_pose,
+                detection_intrinsics,
+            )
+            final_structured_diagnostics = evaluate_final_shared_structured_residuals(
+                [target_detection.per_frame[index].observation for index in inlier_indices],
                 final_pose,
                 detection_intrinsics,
             )
@@ -302,6 +357,8 @@ class FixedCameraCalibrator:
             native_depth_sanity=depth_diagnostic,
             pose_policy=pose_policy,
             final_pose_observability=final_pose_observability,
+            final_structured_residual=final_structured_diagnostics,
+            uncertainty_thresholds=self._uncertainty_thresholds,
             observable_frame_ratio=observable_frame_ratio if uncertainty_policy else None,
             ambiguous_frame_ratio=ambiguous_frame_ratio if uncertainty_policy else None,
             require_native_depth_pass=print_evidence.get("source_type") == "existing_physical",
@@ -310,7 +367,25 @@ class FixedCameraCalibrator:
             global_reprojection=_mapping(reprojection["global"]),
             thresholds=config.solver,
             pose_policy=pose_policy,
+            uncertainty_thresholds=self._uncertainty_thresholds,
         )
+        uncertainty_release = self._uncertainty_thresholds
+        structured_policy = StructuredReprojectionPolicy()
+        structured_thresholds = structured_policy.thresholds
+        structured_root = (
+            final_structured_diagnostics if isinstance(final_structured_diagnostics, dict) else {}
+        )
+        structured_value = structured_root.get("structured_metrics")
+        structured_metrics = structured_value if isinstance(structured_value, dict) else {}
+        structured_candidate_decision = {
+            "evaluated": uncertainty_policy and bool(structured_metrics),
+            "passed": structured_metrics.get("passed") if structured_metrics else None,
+            "enforced": False,
+            "release_state": structured_policy.release_state,
+            "candidate_policy": structured_policy.to_dict(),
+            "failure_reasons": structured_metrics.get("failure_reasons", []),
+            "thresholds": structured_thresholds.to_dict(),
+        }
 
         workspace_from_detection = config.T_workspace_from_target.compose(final_pose.inverse())
         workspace_from_reference = workspace_from_detection.compose(detection_from_reference)
@@ -370,6 +445,24 @@ class FixedCameraCalibrator:
                 "pose_policy": pose_policy,
                 "reprojection_policy": {
                     "name": reprojection_policy_name(pose_policy),
+                    **(
+                        {
+                            "preset": uncertainty_release.preset,
+                            "release_state": uncertainty_release.release_state,
+                            "release_criteria_version": (
+                                uncertainty_release.release_criteria_version
+                            ),
+                            "release_manifest_sha256": (
+                                uncertainty_release.release_manifest_sha256
+                            ),
+                            "structured_gate_version": (
+                                uncertainty_release.structured_gate_version
+                            ),
+                            "candidate_successor": structured_policy.to_dict(),
+                        }
+                        if uncertainty_policy
+                        else {}
+                    ),
                     "legacy_precision_thresholds": {
                         "maximum_frame_rmse_px": config.solver.maximum_frame_rmse_px,
                         "maximum_frame_p95_px": config.solver.maximum_frame_p95_px,
@@ -377,10 +470,10 @@ class FixedCameraCalibrator:
                     "frame_applied_thresholds": (
                         {
                             "maximum_frame_rmse_px": (
-                                UncertaintyValidatedThresholds().maximum_gross_frame_rmse_px
+                                uncertainty_release.maximum_gross_frame_rmse_px
                             ),
                             "maximum_frame_p95_px": (
-                                UncertaintyValidatedThresholds().maximum_gross_frame_p95_px
+                                uncertainty_release.maximum_gross_frame_p95_px
                             ),
                         }
                         if uncertainty_policy
@@ -390,6 +483,17 @@ class FixedCameraCalibrator:
                         }
                     ),
                     "final_decision": final_reprojection_decision,
+                    "gross_scalar_decision": final_reprojection_decision,
+                    "structured_residual_decision": structured_candidate_decision,
+                    "observability_decision": {
+                        "evaluated": uncertainty_policy,
+                        "passed": (
+                            final_pose_observability.get("passed")
+                            if isinstance(final_pose_observability, dict)
+                            else None
+                        ),
+                        "metrics": final_pose_observability,
+                    },
                 },
                 "camera_model": dict(final_refinement.camera_model_diagnostics),
                 "pose_medoid_frame_index": medoid_frame_index,
@@ -413,8 +517,9 @@ class FixedCameraCalibrator:
                         "ambiguous_frame_ratio": ambiguous_frame_ratio,
                         "final_pose_observability": final_pose_observability,
                         "residual_diagnostics": {
-                            "role": "diagnostic_only_not_a_hard_gate",
-                            "final_shared_pose": final_residual_diagnostics,
+                            "role": "candidate_structured_gate_not_enforced_while_hold",
+                            "all_observations_diagnostic": final_residual_diagnostics,
+                            "final_shared_pose": final_structured_diagnostics,
                         },
                     }
                     if uncertainty_policy
@@ -439,6 +544,7 @@ class FixedCameraCalibrator:
         config: FixedCalibrationConfig,
         *,
         pose_policy: str = "legacy_strict",
+        board_reference_points_m: npt.NDArray[np.float64] | None = None,
     ) -> tuple[dict[str, object], PlanarPoseEstimate | None]:
         uncertainty_policy = pose_policy == "uncertainty_validated"
         corner_count = len(observation.point_ids)
@@ -470,6 +576,7 @@ class FixedCameraCalibrator:
             "reprojection_decision": None,
             "observability_decision": None,
             "residual_diagnostics": None,
+            "structured_residual_decision": None,
             "failure_reasons": [],
         }
         if not detection_success or corner_count < config.solver.minimum_corners_per_frame:
@@ -480,6 +587,7 @@ class FixedCameraCalibrator:
                 estimate=None,
                 config=config,
                 pose_policy=pose_policy,
+                uncertainty_thresholds=self._uncertainty_thresholds,
             )
             summary.update(viability)
             return summary, None
@@ -494,6 +602,7 @@ class FixedCameraCalibrator:
                 config=config,
                 pose_policy=pose_policy,
                 pose_solve_error=str(error),
+                uncertainty_thresholds=self._uncertainty_thresholds,
             )
             summary.update(viability)
             return summary, None
@@ -505,8 +614,23 @@ class FixedCameraCalibrator:
             estimate=estimate,
             config=config,
             pose_policy=pose_policy,
+            uncertainty_thresholds=self._uncertainty_thresholds,
         )
         accepted = viability["accepted"] is True
+        residual_diagnostics = evaluate_residual_vector_field(
+            observation,
+            estimate.T_camera_from_target,
+            intrinsics,
+        )
+        if uncertainty_policy:
+            structured = evaluate_observation_structured_residuals(
+                observation,
+                estimate.T_camera_from_target,
+                intrinsics,
+                thresholds=StructuredReprojectionPolicy().thresholds,
+                board_reference_points_m=board_reference_points_m,
+            ).to_dict()
+            residual_diagnostics = {**residual_diagnostics, "structured": structured}
         summary.update(
             {
                 **viability,
@@ -523,10 +647,17 @@ class FixedCameraCalibrator:
                 "reprojection_median_px": reprojection.median_px,
                 "reprojection_p95_px": reprojection.p95_px,
                 "reprojection_max_px": reprojection.maximum_px,
-                "residual_diagnostics": evaluate_residual_vector_field(
-                    observation,
-                    estimate.T_camera_from_target,
-                    intrinsics,
+                "residual_diagnostics": residual_diagnostics,
+                "structured_residual_decision": (
+                    {
+                        "evaluated": True,
+                        "passed": structured.get("passed"),
+                        "enforced": False,
+                        "scope": "frame",
+                        "failure_reasons": structured.get("failure_reasons", []),
+                    }
+                    if uncertainty_policy
+                    else None
                 ),
                 "frame_gate_accepted": accepted,
                 "pose_inlier": accepted,
@@ -824,6 +955,20 @@ def _validate_observation_geometry(target_detection: TargetDetectionArtifact) ->
                     f"target object geometry changed across frames for point ID {point_id}"
                 )
             points_by_id[point_id] = point
+
+
+def _canonical_target_geometry(
+    target_detection: TargetDetectionArtifact,
+) -> npt.NDArray[np.float64]:
+    points_by_id: dict[int, npt.NDArray[np.float64]] = {}
+    for frame in target_detection.per_frame:
+        for point_id, point in zip(
+            frame.observation.point_ids, frame.observation.object_points_m, strict=True
+        ):
+            points_by_id.setdefault(point_id, np.asarray(point, dtype=np.float64))
+    if not points_by_id:
+        raise ContractError("target detection contains no canonical target geometry")
+    return np.asarray([points_by_id[point_id] for point_id in sorted(points_by_id)])
 
 
 def _validated_print_provenance(value: Mapping[str, object]) -> dict[str, object]:

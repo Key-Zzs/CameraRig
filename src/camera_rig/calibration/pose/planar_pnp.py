@@ -102,6 +102,11 @@ class PlanarPoseEstimator:
             observability_thresholds or UncertaintyValidatedThresholds()
         )
 
+    @property
+    def observability_thresholds(self) -> UncertaintyValidatedThresholds:
+        """Return the exact immutable thresholds used by pose estimation."""
+        return self._observability_thresholds
+
     def estimate(
         self, observation: TargetObservation, intrinsics: CameraIntrinsics
     ) -> PlanarPoseEstimate:

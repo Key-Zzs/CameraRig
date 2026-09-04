@@ -21,9 +21,13 @@ ObservabilityScope = Literal["frame", "final"]
 
 @dataclass(frozen=True)
 class UncertaintyValidatedThresholds:
-    """Frozen release preset for the fixed-camera uncertainty policy."""
+    """Historical v1 candidate thresholds; this preset is explicitly on HOLD."""
 
     preset: str = "uncertainty_validated_v1"
+    release_state: Literal["CANDIDATE", "HOLD", "RELEASED"] = "HOLD"
+    release_criteria_version: str | None = None
+    release_manifest_sha256: str | None = None
+    structured_gate_version: str = "structured_residual_v1_candidate"
     pixel_noise_floor_px: float = 0.25
     maximum_gross_frame_rmse_px: float = 1.5
     maximum_gross_frame_p95_px: float = 2.0
@@ -44,6 +48,19 @@ class UncertaintyValidatedThresholds:
     def __post_init__(self) -> None:
         if self.preset != "uncertainty_validated_v1":
             raise ContractError("unsupported pose-observability release preset")
+        if self.release_state not in {"CANDIDATE", "HOLD", "RELEASED"}:
+            raise ContractError("unsupported uncertainty release state")
+        if self.preset == "uncertainty_validated_v1" and self.release_state == "RELEASED":
+            raise ContractError("historical uncertainty_validated_v1 was never released")
+        if self.release_criteria_version is not None and not self.release_criteria_version.strip():
+            raise ContractError("release criteria version must be non-empty when present")
+        if self.release_manifest_sha256 is not None and (
+            len(self.release_manifest_sha256) != 64
+            or any(
+                character not in "0123456789abcdef" for character in self.release_manifest_sha256
+            )
+        ):
+            raise ContractError("release manifest SHA-256 must be lowercase hexadecimal")
         positive = (
             self.pixel_noise_floor_px,
             self.maximum_gross_frame_rmse_px,
@@ -83,6 +100,10 @@ class UncertaintyValidatedThresholds:
     def to_dict(self) -> dict[str, object]:
         return {
             "preset": self.preset,
+            "release_state": self.release_state,
+            "release_criteria_version": self.release_criteria_version,
+            "release_manifest_sha256": self.release_manifest_sha256,
+            "structured_gate_version": self.structured_gate_version,
             "pixel_noise_floor_px": self.pixel_noise_floor_px,
             "maximum_gross_frame_rmse_px": self.maximum_gross_frame_rmse_px,
             "maximum_gross_frame_p95_px": self.maximum_gross_frame_p95_px,

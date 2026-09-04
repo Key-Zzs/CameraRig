@@ -19,9 +19,11 @@ def evaluate_fixed_calibration_quality(
     native_depth_sanity: dict[str, object],
     pose_policy: str = "legacy_strict",
     final_pose_observability: dict[str, object] | None = None,
+    final_structured_residual: dict[str, object] | None = None,
     observable_frame_ratio: float | None = None,
     ambiguous_frame_ratio: float | None = None,
     require_native_depth_pass: bool = False,
+    uncertainty_thresholds: UncertaintyValidatedThresholds | None = None,
 ) -> QualityReport:
     """Evaluate every persisted hard gate without silently skipping unavailable evidence."""
     accepted_ratio = accepted_frames / frame_count if frame_count else 0.0
@@ -38,6 +40,7 @@ def evaluate_fixed_calibration_quality(
         global_reprojection=global_reprojection,
         thresholds=thresholds,
         pose_policy=pose_policy,
+        uncertainty_thresholds=uncertainty_thresholds,
     )
     reprojection_checks = _mapping(reprojection_decision.get("checks"))
     checks: dict[str, bool] = {
@@ -46,7 +49,7 @@ def evaluate_fixed_calibration_quality(
     }
     release = None
     if pose_policy == "uncertainty_validated":
-        release = UncertaintyValidatedThresholds()
+        release = uncertainty_thresholds or UncertaintyValidatedThresholds()
         checks.update(
             {
                 "gross_global_reprojection_rmse": (
@@ -179,6 +182,8 @@ def evaluate_fixed_calibration_quality(
                 "observable_frame_ratio": observable_frame_ratio,
                 "ambiguous_frame_ratio": ambiguous_frame_ratio,
                 "final_pose_observability": final_pose_observability,
+                "final_structured_residual": final_structured_residual,
+                "structured_residual_enforced": False,
             }
         )
         persisted_thresholds = {**persisted_thresholds, "pose_observability": release.to_dict()}

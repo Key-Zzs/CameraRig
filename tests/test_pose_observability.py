@@ -13,6 +13,7 @@ from camera_rig.calibration.pose import (
     projection_jacobian_first_six,
     to_opencv_camera_model,
 )
+from camera_rig.core.errors import ContractError
 from camera_rig.core.intrinsics import CameraIntrinsics
 from camera_rig.core.transforms import RigidTransform
 
@@ -319,3 +320,13 @@ def test_larger_physical_target_improves_information_at_same_distance() -> None:
         intrinsics=_intrinsics(),
     )
     assert large_metrics.translation_worst_axis_std_mm < small_metrics.translation_worst_axis_std_mm
+
+
+def test_historical_uncertainty_preset_is_explicitly_hold_and_cannot_be_released() -> None:
+    thresholds = UncertaintyValidatedThresholds()
+    assert thresholds.preset == "uncertainty_validated_v1"
+    assert thresholds.release_state == "HOLD"
+    assert thresholds.release_manifest_sha256 is None
+    assert thresholds.to_dict()["structured_gate_version"] == ("structured_residual_v1_candidate")
+    with pytest.raises(ContractError, match="never released"):
+        UncertaintyValidatedThresholds(release_state="RELEASED")
