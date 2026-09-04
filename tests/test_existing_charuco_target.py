@@ -889,6 +889,13 @@ def test_uncertainty_live_preflight_uses_same_session_intrinsics(tmp_path: Path)
     assert session.index == 60
     assert report["pose_observability_used"] is True
     assert report["status"] == "PASS"
+    assert report["numerical_status"] == "PASS"
+    assert report["operator_recommendation"] == "CANDIDATE_ONLY_ADEQUATE_RELEASE_HOLD"
+    assert report["publication_eligibility"] == {
+        "eligible": False,
+        "release_state": "HOLD",
+        "reason": "UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED",
+    }
     assert report["acceptance"]["coverage"]["hard_gate"] is False  # type: ignore[index]
     pose = report["metrics"]["pose_observability"]  # type: ignore[index]
     assert pose["solve_success_ratio"] == 1.0

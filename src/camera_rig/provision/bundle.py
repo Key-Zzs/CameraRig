@@ -214,6 +214,30 @@ def _require_passing_evidence(
         raise ContractError("fixed calibration evidence must be passed")
     if not fixed_calibration.fixed_mount_calibration.quality.passed:
         raise ContractError("fixed_mount_calibration quality must be passed")
+    if not solver_release_eligible(fixed_calibration.solver, acceptance):
+        raise ContractError(
+            "uncertainty_validated is not release-enabled; canonical provision is blocked"
+        )
+
+
+def solver_release_eligible(
+    solver: Mapping[str, object], target_acceptance: Mapping[str, object]
+) -> bool:
+    """Validate policy agreement and fail closed for every uncertainty candidate."""
+    known = {"legacy_strict", "pose_validated", "uncertainty_validated"}
+    solver_policy = solver.get("pose_policy")
+    target_policy = target_acceptance.get("policy")
+    if solver_policy is None and target_policy is None:
+        # Explicit backward-compatibility route for artifacts written before either
+        # side serialized a policy. Those artifacts used the legacy strict policy.
+        return True
+    if not isinstance(solver_policy, str) or not isinstance(target_policy, str):
+        return False
+    if solver_policy not in known or target_policy not in known:
+        return False
+    if solver_policy != target_policy:
+        return False
+    return solver_policy != "uncertainty_validated"
 
 
 def _validate_fixed_bindings(

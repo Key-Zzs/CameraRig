@@ -122,9 +122,12 @@ def run_target_preflight(
         )
     else:
         recommendation = _recommendation(observations)
+    numerical_pass = recommendation.startswith("ADEQUATE")
+    release_hold = policy == "uncertainty_validated"
     report: dict[str, object] = {
         "schema_version": "camera-rig.target-preflight.v1",
-        "status": "PASS" if recommendation.startswith("ADEQUATE") else "FAIL",
+        "status": "PASS" if numerical_pass else "FAIL",
+        "numerical_status": "PASS" if numerical_pass else "FAIL",
         "camera_name": camera_config.camera.name,
         "stream": stream,
         "frame_count": frames,
@@ -135,6 +138,14 @@ def run_target_preflight(
         "metrics": metrics,
         **({"acceptance": acceptance} if acceptance is not None else {}),
         "recommendation": recommendation,
+        "operator_recommendation": (
+            f"CANDIDATE_ONLY_{recommendation}_RELEASE_HOLD" if release_hold else recommendation
+        ),
+        "publication_eligibility": {
+            "eligible": not release_hold,
+            "release_state": "HOLD" if release_hold else "NOT_APPLICABLE",
+            "reason": ("UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED" if release_hold else None),
+        },
         "selected_overlays": overlay_files,
         "per_frame": [
             {

@@ -240,6 +240,84 @@ def test_builder_aggregates_passing_evidence_and_required_checks() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "forged_policy",
+    [
+        {"release_state": "HOLD"},
+        {"release_state": "RELEASED"},
+        {
+            "preset": "uncertainty_validated_v2",
+            "release_state": "RELEASED",
+            "release_manifest_sha256": "a" * 64,
+            "structured_residual_decision": {"passed": True, "enforced": True},
+        },
+    ],
+)
+def test_uncertainty_publication_is_blocked_even_with_forged_release(
+    forged_policy: dict[str, object],
+) -> None:
+    factory = _factory()
+    detection = _target_detection()
+    fixed = _fixed(factory, detection)
+    forged = replace(
+        fixed,
+        solver={
+            **fixed.solver,
+            "pose_policy": "uncertainty_validated",
+            "reprojection_policy": forged_policy,
+        },
+    )
+    with pytest.raises(ContractError, match="not release-enabled"):
+        build_fixed_camera_bundle(
+            bundle_id="forged-release-must-not-publish",
+            created_at="2026-09-04T00:00:00Z",
+            factory=factory,
+            stream_validation=_stream_validation(),
+            target_detection=detection,
+            fixed_calibration=forged,
+            provenance={"source": "adversarial-unit-test"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("target_policy", "solver_policy"),
+    [
+        ("uncertainty_validated", None),
+        (None, "uncertainty_validated"),
+        ("legacy_strict", "uncertainty_validated"),
+        ("uncertainty_validated", "legacy_strict"),
+        ("unknown_policy", "unknown_policy"),
+        ("legacy_strict", None),
+        (None, "legacy_strict"),
+    ],
+)
+def test_publication_rejects_missing_unknown_or_mismatched_policy_provenance(
+    target_policy: str | None,
+    solver_policy: str | None,
+) -> None:
+    factory = _factory()
+    original = _target_detection()
+    acceptance = dict(original.acceptance or {})
+    if target_policy is not None:
+        acceptance["policy"] = target_policy
+    detection = replace(original, acceptance=acceptance)
+    fixed = _fixed(factory, detection)
+    solver = dict(fixed.solver)
+    if solver_policy is not None:
+        solver["pose_policy"] = solver_policy
+    forged = replace(fixed, solver=solver)
+    with pytest.raises(ContractError, match="not release-enabled"):
+        build_fixed_camera_bundle(
+            bundle_id="policy-provenance-must-fail-closed",
+            created_at="2026-09-04T00:00:00Z",
+            factory=factory,
+            stream_validation=_stream_validation(),
+            target_detection=detection,
+            fixed_calibration=forged,
+            provenance={"source": "adversarial-unit-test"},
+        )
+
+
 def test_write_reload_and_downstream_point_transform_smoke(tmp_path: Path) -> None:
     path = tmp_path / "fixed_camera_bundle.json"
     restored = write_fixed_camera_bundle(path, _bundle())

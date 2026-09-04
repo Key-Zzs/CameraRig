@@ -153,10 +153,17 @@ def _validate_artifact(arguments: argparse.Namespace) -> int:
     acceptance = report["acceptance"]
     assert isinstance(acceptance, dict)
     passed = acceptance["passed"] is True
-    print(
-        f"target artifact validation: {'PASS' if passed else 'FAIL'} "
-        f"({report['frame_count']} frames)"
-    )
+    if arguments.policy == "uncertainty_validated":
+        print(
+            "target artifact validation: "
+            f"NUMERICAL_{'PASS' if passed else 'FAIL'} RELEASE_HOLD "
+            f"candidate_only=true ({report['frame_count']} frames)"
+        )
+    else:
+        print(
+            f"target artifact validation: {'PASS' if passed else 'FAIL'} "
+            f"({report['frame_count']} frames)"
+        )
     if not passed:
         raise ContractError("target artifact acceptance failed; report and overlays were preserved")
     return 0
@@ -215,9 +222,17 @@ def _preflight(arguments: argparse.Namespace) -> int:
         report_path=arguments.report,
         overlays_path=arguments.overlays,
     )
-    print(
-        f"target deployment preflight: {report['status']} recommendation={report['recommendation']}"
-    )
+    if arguments.policy == "uncertainty_validated":
+        print(
+            "target deployment preflight: "
+            f"NUMERICAL_{report['status']} RELEASE_HOLD "
+            f"recommendation={report['operator_recommendation']}"
+        )
+    else:
+        print(
+            f"target deployment preflight: {report['status']} "
+            f"recommendation={report['recommendation']}"
+        )
     if report["status"] != "PASS":
         raise ContractError(f"target deployment recommendation: {report['recommendation']}")
     return 0

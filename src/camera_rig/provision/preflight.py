@@ -16,6 +16,7 @@ from camera_rig.calibration.fixed.aggregation import distribution
 from camera_rig.calibration.pose.dependencies import cv2_module
 from camera_rig.config.validation import validate_against_named_schema
 from camera_rig.core.errors import ArtifactError, CameraRigError, MissingOptionalDependencyError
+from camera_rig.provision.bundle import solver_release_eligible
 from camera_rig.provision.config import ProvisionConfig
 from camera_rig.targets.io import validate_target_artifact
 
@@ -105,6 +106,7 @@ def run_fixed_provision_preflight(
     *,
     report: str | Path,
     overlays: str | Path,
+    evidence_root: str | Path | None = None,
     dependencies: object | None = None,
 ) -> dict[str, object]:
     """Run the production acquisition/evaluation core without publishing a provision."""
@@ -116,6 +118,9 @@ def run_fixed_provision_preflight(
     report_path = Path(report)
     overlays_path = Path(overlays)
     _validate_diagnostic_destinations(report_path, overlays_path)
+    evidence_path = Path(evidence_root) if evidence_root is not None else None
+    if evidence_path is not None:
+        _validate_evidence_destination(evidence_path, report_path, overlays_path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(
         tempfile.mkdtemp(dir=report_path.parent, prefix=f".{report_path.stem}.evaluation-")
@@ -149,6 +154,15 @@ def run_fixed_provision_preflight(
             if overlays_preexisted:
                 overlays_path.mkdir(parents=True, exist_ok=True)
             raise
+        if evidence_path is not None:
+            try:
+                _publish_evidence(staging, evidence_path)
+            except Exception:
+                report_path.unlink(missing_ok=True)
+                shutil.rmtree(overlays_path, ignore_errors=True)
+                if overlays_preexisted:
+                    overlays_path.mkdir(parents=True, exist_ok=True)
+                raise
         return value
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -169,7 +183,9 @@ def _build_preflight_report(
     target_evaluated = raw_status == "PASS" and bool(detection)
     fixed_evaluated = target_evaluated and bool(fixed)
     quality = _mapping(fixed.get("quality")) if fixed else {}
-    would_pass = fixed_evaluated and quality.get("passed") is True
+    numerical_pass = fixed_evaluated and quality.get("passed") is True
+    release_eligible = _release_eligible(config, fixed)
+    would_pass = numerical_pass and release_eligible
     per_frame = _mapping_list(fixed.get("per_frame_pose_summary")) if fixed else []
     solved = [item for item in per_frame if item.get("T_camera_from_target") is not None]
     frame_gate = [item for item in per_frame if item.get("frame_gate_accepted") is True]
@@ -185,6 +201,8 @@ def _build_preflight_report(
     final_failures = _string_list(quality.get("failure_reasons"))
     if not fixed_evaluated and failure:
         final_failures = [failure]
+    if not release_eligible:
+        final_failures.append("UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED")
     return {
         "schema_version": PROVISION_PREFLIGHT_SCHEMA_VERSION,
         "attempt_id": str(uuid.uuid4()),
@@ -193,6 +211,14 @@ def _build_preflight_report(
         "camera": {"logical_name": config.camera_config.camera.name},
         "target_fingerprint": config.target.expected_sha256,
         "pose_policy": config.target.detection_policy,
+        "candidate_numerical_decision": (
+            "PASS" if numerical_pass else "FAIL" if fixed_evaluated else "NOT_RUN"
+        ),
+        "publication_eligibility": {
+            "eligible": release_eligible,
+            "release_state": "NOT_APPLICABLE" if release_eligible else "HOLD",
+            "reason": (None if release_eligible else "UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED"),
+        },
         "evaluation_core": "run_fixed_provision_workflow",
         "raw_stream": {
             "status": raw_status,
@@ -235,6 +261,42 @@ def _build_preflight_report(
             "canonical_output_modified": False,
         },
     }
+
+
+def _validate_evidence_destination(
+    destination: Path, report_path: Path, overlays_path: Path
+) -> None:
+    if destination.exists() or destination.is_symlink():
+        raise ArtifactError("preflight evidence root must not already exist")
+    resolved = destination.resolve(strict=False)
+    if ".local" not in resolved.parts:
+        raise ArtifactError("preflight evidence root must be inside a private .local directory")
+    for ancestor in (destination, *destination.parents):
+        if ancestor.exists() and ancestor.is_symlink():
+            raise ArtifactError("preflight evidence path must not traverse a symlink")
+    for other in (report_path.resolve(strict=False), overlays_path.resolve(strict=False)):
+        if resolved == other or resolved in other.parents or other in resolved.parents:
+            raise ArtifactError("preflight evidence root must not overlap report or overlays")
+
+
+def _publish_evidence(staging: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_root = Path(
+        tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}.publish-")
+    )
+    candidate = temporary_root / "evidence"
+    try:
+        shutil.copytree(staging, candidate)
+        os.replace(candidate, destination)
+    finally:
+        shutil.rmtree(temporary_root, ignore_errors=True)
+
+
+def _release_eligible(config: ProvisionConfig, fixed: dict[str, object]) -> bool:
+    if not fixed:
+        return config.target.detection_policy != "uncertainty_validated"
+    solver = _mapping(fixed.get("solver")) if fixed else {}
+    return solver_release_eligible(solver, {"policy": config.target.detection_policy})
 
 
 def _reprojection_summary(

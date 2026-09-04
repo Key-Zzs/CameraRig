@@ -54,6 +54,11 @@ def add_provision_commands(
     preflight.add_argument(
         "--overlays", type=Path, required=True, help="diagnostic overlay directory"
     )
+    preflight.add_argument(
+        "--evidence-root",
+        type=Path,
+        help="retain immutable private capture/evaluation inputs for offline validation",
+    )
     preflight.set_defaults(handler=_provision_preflight)
 
     validate = groups.add_parser("validate", help="validate a complete provision artifact")
@@ -147,7 +152,12 @@ def _print_fixed_dry_run(plan: dict[str, object]) -> int:
         if isinstance(dependencies, dict)
         else "validated"
     )
-    print("fixed provision dry-run: PASS")
+    if plan.get("target_detection_policy") == "uncertainty_validated":
+        print(
+            "fixed provision dry-run: INPUTS_PASS RELEASE_HOLD canonical_publication_blocked=true"
+        )
+    else:
+        print("fixed provision dry-run: PASS")
     print(f"  streams: {','.join(enabled_streams)}")
     print(
         f"  acquisition: validation_frames={plan['stream_validation_frames']}, "
@@ -200,6 +210,7 @@ def _provision_preflight(arguments: argparse.Namespace) -> int:
         config,
         report=arguments.report,
         overlays=arguments.overlays,
+        evidence_root=arguments.evidence_root,
     )
     frames = value.get("fixed_pose_frames")
     frame_summary = frames if isinstance(frames, dict) else {}

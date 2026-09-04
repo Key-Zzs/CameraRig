@@ -106,6 +106,7 @@ def test_fixed_provision_cli_dry_run_never_enters_live_workflow(
         "enabled_streams": ["color", "depth", "ir_left", "ir_right"],
         "stream_validation_frames": 300,
         "calibration_frames": 60,
+        "target_detection_policy": "uncertainty_validated",
     }
     monkeypatch.setattr(
         "camera_rig.cli.commands.provision.preflight_fixed_provision",
@@ -134,6 +135,8 @@ def test_fixed_provision_cli_dry_run_never_enters_live_workflow(
         == 0
     )
     captured = capsys.readouterr()
+    assert "INPUTS_PASS RELEASE_HOLD" in captured.out
+    assert "canonical_publication_blocked=true" in captured.out
     assert "camera_opened=no" in captured.out
     assert "output_written=no" in captured.out
     assert captured.err == ""

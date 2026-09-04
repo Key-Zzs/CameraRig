@@ -38,6 +38,17 @@
     "pose_policy": {
       "enum": ["legacy_strict", "pose_validated", "uncertainty_validated"]
     },
+    "candidate_numerical_decision": {"enum": ["PASS", "FAIL", "NOT_RUN"]},
+    "publication_eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligible", "release_state", "reason"],
+      "properties": {
+        "eligible": {"type": "boolean"},
+        "release_state": {"enum": ["NOT_APPLICABLE", "HOLD"]},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
     "evaluation_core": {"const": "run_fixed_provision_workflow"},
     "raw_stream": {
       "type": "object",

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+import camera_rig.cli.commands.target as target_cli
 import camera_rig.targets.validation as target_validation
 from camera_rig.artifacts.factory_calibration import FactoryCalibrationArtifact
+from camera_rig.artifacts.io import atomic_write_json
 from camera_rig.artifacts.target_detection import load_and_validate_target_detection
 from camera_rig.capture.snapshot import write_snapshot
 from camera_rig.core.device_info import CameraDeviceInfo
@@ -25,6 +28,50 @@ from camera_rig.targets.validation import detect_image, validate_capture_artifac
 
 cv2 = pytest.importorskip("cv2")
 pytestmark = pytest.mark.charuco
+
+
+def test_uncertainty_target_cli_labels_numerical_pass_as_release_hold(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        target_cli,
+        "validate_capture_artifact_target",
+        lambda **_kwargs: {"acceptance": {"passed": True}, "frame_count": 60},
+    )
+    validate_arguments = SimpleNamespace(
+        target=Path("target.json"),
+        artifact=Path("capture"),
+        stream="color",
+        report=Path("report.json"),
+        overlays=Path("overlays"),
+        policy="uncertainty_validated",
+    )
+    assert target_cli._validate_artifact(validate_arguments) == 0
+    assert "NUMERICAL_PASS RELEASE_HOLD candidate_only=true" in capsys.readouterr().out
+
+    monkeypatch.setattr(target_cli, "load_config", lambda _path: object())
+    monkeypatch.setattr(
+        target_cli,
+        "run_target_preflight",
+        lambda **_kwargs: {
+            "status": "PASS",
+            "recommendation": "ADEQUATE",
+            "operator_recommendation": "CANDIDATE_ONLY_ADEQUATE_RELEASE_HOLD",
+        },
+    )
+    preflight_arguments = SimpleNamespace(
+        camera_config=Path("camera.yaml"),
+        target=Path("target.json"),
+        frames=60,
+        stream="color",
+        policy="uncertainty_validated",
+        report=Path("preflight.json"),
+        overlays=Path("overlays"),
+    )
+    assert target_cli._preflight(preflight_arguments) == 0
+    output = capsys.readouterr().out
+    assert "NUMERICAL_PASS RELEASE_HOLD" in output
+    assert "CANDIDATE_ONLY_ADEQUATE_RELEASE_HOLD" in output
 
 
 def test_rank_deficient_pose_diagnostic_is_aggregated_fail_closed() -> None:
@@ -239,6 +286,22 @@ def test_uncertainty_capture_report_persists_pose_observability(
     assert all("pose_diagnostic" in item for item in report["per_frame"])  # type: ignore[union-attr]
     restored = load_and_validate_target_detection(report_path)
     assert all(frame.pose_diagnostic is not None for frame in restored.per_frame)
+    historical = dict(report)
+    acceptance = historical["acceptance"]
+    assert isinstance(acceptance, dict)
+    thresholds = acceptance["thresholds"]
+    assert isinstance(thresholds, dict)
+    for key in (
+        "release_state",
+        "release_criteria_version",
+        "release_manifest_sha256",
+        "structured_gate_version",
+    ):
+        thresholds.pop(key)
+    historical_path = tmp_path / "historical-v1-report.json"
+    atomic_write_json(historical_path, historical)
+    historical_restored = load_and_validate_target_detection(historical_path)
+    assert historical_restored.frame_count == restored.frame_count
 
 
 def test_uncertainty_capture_fails_closed_when_intrinsics_are_unavailable(

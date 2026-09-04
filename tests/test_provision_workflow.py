@@ -32,7 +32,7 @@ from camera_rig.config.models import (
 )
 from camera_rig.config.validation import validate_against_named_schema
 from camera_rig.core.device_info import CameraDeviceInfo
-from camera_rig.core.errors import ContractError, SchemaValidationError
+from camera_rig.core.errors import ArtifactError, ContractError, SchemaValidationError
 from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame, StreamFrame
 from camera_rig.core.intrinsics import CameraIntrinsics
@@ -45,7 +45,10 @@ from camera_rig.provision.config import (
     ProvisionConfig,
     ProvisionTargetSettings,
 )
-from camera_rig.provision.preflight import run_fixed_provision_preflight
+from camera_rig.provision.preflight import (
+    _validate_evidence_destination,
+    run_fixed_provision_preflight,
+)
 from camera_rig.provision.workflow import (
     ProvisionWorkflowDependencies,
     run_fixed_provision_workflow,
@@ -56,6 +59,23 @@ from camera_rig.targets.observation import TargetObservation
 pytest.importorskip("cv2")
 Image = pytest.importorskip("PIL.Image")
 pytestmark = pytest.mark.charuco
+
+
+def test_preflight_evidence_requires_private_nonoverlapping_local_path(tmp_path: Path) -> None:
+    with pytest.raises(ArtifactError, match=r"private \.local"):
+        _validate_evidence_destination(
+            tmp_path / "tracked-evidence",
+            tmp_path / "report.json",
+            tmp_path / "overlays",
+        )
+    evidence = tmp_path / ".local" / "evidence"
+    with pytest.raises(ArtifactError, match="must not overlap"):
+        _validate_evidence_destination(
+            evidence,
+            evidence / "report.json",
+            tmp_path / "overlays",
+        )
+
 
 _WIDTH = 64
 _HEIGHT = 48
@@ -419,6 +439,52 @@ def test_fixed_provision_workflow_uses_one_session_and_stages_modular_artifacts(
     )
 
 
+def test_uncertainty_hold_preflight_retains_evidence_and_blocks_publication(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+) -> None:
+    base = _config(generated_charuco_target)
+    config = replace(
+        base,
+        target=replace(base.target, detection_policy="uncertainty_validated"),
+    )
+    dependencies, _session, _detector = _dependencies(config)
+    permissive = UncertaintyValidatedThresholds(
+        maximum_frame_translation_worst_std_mm=1000.0,
+        maximum_frame_rotation_worst_std_deg=1000.0,
+        maximum_final_translation_worst_std_mm=1000.0,
+        maximum_final_rotation_worst_std_deg=1000.0,
+        maximum_scaled_condition_number=1e9,
+        ambiguity_material_translation_mm=1e9,
+        ambiguity_material_rotation_deg=1e9,
+    )
+    dependencies = replace(
+        dependencies,
+        fixed_calibrator_factory=lambda: FixedCameraCalibrator(
+            PlanarPoseEstimator(permissive), permissive
+        ),
+    )
+    evidence_root = tmp_path / ".local" / "private-evidence"
+    preflight = run_fixed_provision_preflight(
+        config,
+        report=tmp_path / "candidate.json",
+        overlays=tmp_path / "candidate-overlays",
+        evidence_root=evidence_root,
+        dependencies=dependencies,
+    )
+    assert preflight["status"] == "FAIL"
+    assert preflight["would_publish_fixed_provision"] is False
+    assert "UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED" in preflight["failure_reasons"]
+    assert preflight["candidate_numerical_decision"] == "NOT_RUN"
+    assert preflight["publication_eligibility"] == {
+        "eligible": False,
+        "release_state": "HOLD",
+        "reason": "UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED",
+    }
+    assert (evidence_root / "capture/calibration_snapshot/manifest.json").is_file()
+    assert (evidence_root / "target/detection_report.json").is_file()
+
+
 @pytest.mark.parametrize(
     ("mode", "message", "detector_calls"),
     [
@@ -768,9 +834,11 @@ def test_live_preflight_reports_uncertainty_frame_gate_failures(
                 return replace(estimate, observability=observability)
 
         pose_estimator = ForcedAmbiguousEstimator()
+    calibrator = FixedCameraCalibrator(pose_estimator)
+    assert calibrator.uncertainty_thresholds == pose_estimator.observability_thresholds
     dependencies = replace(
         dependencies,
-        fixed_calibrator_factory=lambda: FixedCameraCalibrator(pose_estimator),
+        fixed_calibrator_factory=lambda: calibrator,
     )
     actual_staging = tmp_path / f"{failure_mode}-actual"
     with pytest.raises(ContractError, match="no frame passing the pose frame gates"):
@@ -782,7 +850,7 @@ def test_live_preflight_reports_uncertainty_frame_gate_failures(
     preflight_dependencies, _session, _detector = _dependencies(config)
     preflight_dependencies = replace(
         preflight_dependencies,
-        fixed_calibrator_factory=lambda: FixedCameraCalibrator(pose_estimator),
+        fixed_calibrator_factory=lambda: calibrator,
     )
     value = run_fixed_provision_preflight(
         config,

@@ -24,6 +24,7 @@ from camera_rig.calibration.fixed.artifact import (
 )
 from camera_rig.calibration.fixed.calibrator import FixedCameraCalibrator
 from camera_rig.calibration.fixed.config import load_fixed_config
+from camera_rig.calibration.fixed.counterfactuals import evaluate_model_counterfactuals
 from camera_rig.calibration.fixed.depth_sanity import evaluate_native_depth_sanity
 from camera_rig.calibration.fixed.overlays import select_overlay_frames, write_fixed_pose_overlay
 from camera_rig.capture.replay import ReplayCameraSession
@@ -71,6 +72,15 @@ def add_calibration_commands(
     )
     fixed_validate.add_argument("--input", type=Path, required=True)
     fixed_validate.set_defaults(handler=_validate_fixed)
+
+    counterfactuals = groups.add_parser(
+        "evaluate-model-counterfactuals",
+        help="evaluate retained detections under wrong camera/target assumptions",
+    )
+    counterfactuals.add_argument("--detection-report", type=Path, required=True)
+    counterfactuals.add_argument("--factory-calibration", type=Path, required=True)
+    counterfactuals.add_argument("--output", type=Path, required=True)
+    counterfactuals.set_defaults(handler=_evaluate_model_counterfactuals)
 
 
 def _export_factory(arguments: argparse.Namespace) -> int:
@@ -221,8 +231,13 @@ def _solve_fixed(arguments: argparse.Namespace) -> int:
     ):
         raise ArtifactError("fixed calibration reprojection aggregate is invalid")
     metrics = global_reprojection["global"]
+    release_label = (
+        "NUMERICAL_PASS RELEASE_HOLD"
+        if artifact.solver.get("pose_policy") == "uncertainty_validated"
+        else "PASS"
+    )
     print(
-        "fixed calibration: PASS "
+        f"fixed calibration: {release_label} "
         f"({artifact.aggregate['accepted_frames']}/{detection.frame_count} frames, "
         f"RMSE={metrics['rmse_px']:.4f}px)"
     )
@@ -231,9 +246,36 @@ def _solve_fixed(arguments: argparse.Namespace) -> int:
 
 def _validate_fixed(arguments: argparse.Namespace) -> int:
     artifact = load_and_validate_fixed_calibration(arguments.input)
+    release_label = (
+        "numerical_quality=passed, release=HOLD"
+        if artifact.solver.get("pose_policy") == "uncertainty_validated"
+        else "quality=passed"
+    )
     print(
-        f"valid {artifact.schema_version}: quality=passed, "
+        f"valid {artifact.schema_version}: {release_label}, "
         f"reference_frame={artifact.fixed_mount_calibration.camera_reference_frame!r}"
+    )
+    return 0
+
+
+def _evaluate_model_counterfactuals(arguments: argparse.Namespace) -> int:
+    from camera_rig.artifacts.io import atomic_write_json
+
+    detection = load_and_validate_target_detection(arguments.detection_report)
+    factory = load_and_validate_factory_calibration(arguments.factory_calibration)
+    report = evaluate_model_counterfactuals(
+        detection,
+        factory,
+        detection_report_sha256=sha256_file(arguments.detection_report),
+        factory_calibration_sha256=sha256_file(arguments.factory_calibration),
+    )
+    atomic_write_json(arguments.output, report)
+    counterfactual_values = report.get("counterfactuals")
+    if not isinstance(counterfactual_values, list):
+        raise ArtifactError("model counterfactual evaluation returned invalid variants")
+    print(
+        "model counterfactual evaluation: ANALYSIS_ONLY_NO_GROUND_TRUTH "
+        f"({len(counterfactual_values)} variants)"
     )
     return 0
 
