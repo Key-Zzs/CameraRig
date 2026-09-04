@@ -73,7 +73,9 @@ package-dir = { "" = "src" }
   "benchmarks/pose_observability_benchmark.py",
   "benchmarks/reprojection_policy_holdout.py",
   "benchmarks/reprojection_policy_sweep.py",
+  "benchmarks/structured_reprojection_gate.py",
 ]
+"share/camera-rig/release_manifests" = ["release_manifests/*.json"]
 "share/camera-rig/docs" = [
   "docs/calibration-quality.md",
   "docs/charuco-target.md",

@@ -1,0 +1,22 @@
+{
+  "schema_version": "camera-rig.structured-reprojection-split-receipt.v1",
+  "status": "FROZEN_UNOPENED",
+  "generator": "benchmarks/structured_reprojection_gate.py",
+  "generator_schema_version": "camera-rig.structured-reprojection-split.v1",
+  "assignment_unit": "counterfactual_family",
+  "assignment_method": "sha256 salted deterministic family assignment",
+  "assignment_salt": "camera-rig-structured-reprojection-2026-09-04-v1",
+  "generator_version": "physical_model_counterfactuals_v1",
+  "development_fraction": 0.8,
+  "family_count": 3600,
+  "development_family_count": 2895,
+  "holdout_family_count": 705,
+  "planned_development_final_family_count": 233,
+  "planned_holdout_final_family_count": 55,
+  "holdout_zero_error_wilson_upper_95": 0.0653,
+  "release_eligible": false,
+  "release_ineligibility_reason": "development failed and final holdout denominator cannot establish a 5 percent Wilson upper bound",
+  "generated_split_manifest_sha256": "170ef31aa7e77b5c993657abdb0eef42a676f20219c68ebb80e064df52315794",
+  "holdout_policy": "holdout family identities and metrics must not be inspected before preregistration",
+  "release_decision": "HOLD"
+}

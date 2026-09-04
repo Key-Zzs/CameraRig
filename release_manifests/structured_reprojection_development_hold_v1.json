@@ -1,0 +1,41 @@
+{
+  "schema_version": "camera-rig.structured-reprojection-development-receipt.v1",
+  "status": "DEVELOPMENT_FAILED_HOLD",
+  "generator": "benchmarks/structured_reprojection_gate.py",
+  "generator_version": "physical_model_counterfactuals_v1",
+  "assignment_unit": "counterfactual_family_worst_case",
+  "split_manifest_sha256": "170ef31aa7e77b5c993657abdb0eef42a676f20219c68ebb80e064df52315794",
+  "development_evidence_sha256": "214be832de39c182bd78533fe843809d63d47829ad67769d83a89f14ad1fff6c",
+  "threshold_scan_sha256": "ef86c44e2b910f3ec58e20ad1baf6912cbcfc511d9d017e847f2f92dfe16a6e4",
+  "development_family_count": 2895,
+  "final_shared_pose_variant_scope": "representative development screen only; not a release suite",
+  "final_shared_pose_variants_per_family": 10,
+  "future_release_variant_requirement": "bind the full dual-sign multi-amplitude physical mismatch grid or preregister a statistically justified reduction before opening a new holdout",
+  "final_shared_pose_development": {
+    "model_name": "minimal_image_board_union",
+    "positive_false_reject": 16,
+    "positive_n": 223,
+    "positive_false_reject_wilson_upper_95": 0.11335883894318081,
+    "negative_false_accept": 200,
+    "negative_n": 228,
+    "negative_false_accept_wilson_upper_95": 0.9136514539426872,
+    "challenging_negative_false_accept": 200,
+    "challenging_negative_n": 207,
+    "challenging_negative_false_accept_wilson_upper_95": 0.9835245670598911
+  },
+  "threshold_scan": {
+    "candidate_count": 4500,
+    "development_target_met_count": 0,
+    "recommendation": "HOLD"
+  },
+  "holdout_metrics_opened": false,
+  "preregistered_holdout_evaluation": false,
+  "planned_holdout_final_family_count": 55,
+  "holdout_zero_error_wilson_upper_95": 0.0653,
+  "release_eligible": false,
+  "release_decision": "HOLD",
+  "release_ineligibility_reasons": [
+    "no scanned development threshold tuple meets all three 5 percent Wilson upper bounds",
+    "the planned final holdout denominator cannot establish a 5 percent Wilson upper bound even with zero errors"
+  ]
+}
