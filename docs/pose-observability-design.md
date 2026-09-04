@@ -1,6 +1,7 @@
 # Pose-observability gate design
 
-This record defines the implementation boundary for `uncertainty_validated`. It is intentionally
+This record defines the implementation boundary for the historical
+`uncertainty_validated_v1` candidate. Its explicit release state is HOLD; it is intentionally
 separate from raw-stream validation and from PointCloudBuilder multi-camera calibration.
 
 ## Existing gate map
@@ -36,7 +37,7 @@ addition to a separate gross model-consistency reprojection gate, repeatability,
 native-depth gates. The historical precision thresholds remain unchanged for `legacy_strict` and
 `pose_validated`; `uncertainty_validated` instead persists independent 1.5 px RMSE and 2.0 px p95
 gross limits because its residual SSE already enters the conditional covariance pixel-noise model.
-Residual vector-field structure is persisted for threshold evidence and diagnosis but is not a hard
+Cross-validated residual-vector structure is persisted for threshold evidence and diagnosis but is not a production hard
 gate.
 
 OpenCV's analytic Jacobian is with respect to additive Rodrigues-vector coordinates. After stable

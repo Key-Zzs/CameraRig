@@ -125,14 +125,28 @@ camera-rig provision fixed \
 camera-rig provision preflight \
   --config .local/configs/fixed_provision.yaml \
   --report .local/reports/fixed-provision-preflight.json \
-  --overlays .local/overlays/fixed-provision-preflight
-if camera-rig provision fixed \
-    --config .local/configs/fixed_provision.yaml \
-    --output .local/artifacts/fixed_camera; then
-  camera-rig provision validate \
-    --artifact .local/artifacts/fixed_camera
-fi
+  --overlays .local/overlays/fixed-provision-preflight \
+  --evidence-root .local/validation/structured-gate/camera_a/repeat_01
 ```
+
+`uncertainty_validated_v1` is explicitly `HOLD`, not a frozen release preset. Its live
+preflight can retain private capture/evaluation evidence under `--evidence-root`, but reports
+`UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED` and `would_publish=false` even when the candidate
+numerical checks pass. `provision fixed` refuses to build a canonical CameraBundle for this HOLD
+policy. Retained captures are offline validation inputs, not provisions.
+
+Evaluate one retained repeat under in-memory K/D/target counterfactuals without changing any
+capture, calibration, or provision artifact:
+
+```bash
+camera-rig calibration evaluate-model-counterfactuals \
+  --detection-report .local/validation/structured-gate/camera_a/repeat_01/target/detection_report.json \
+  --factory-calibration .local/validation/structured-gate/camera_a/repeat_01/factory/factory_calibration.json \
+  --output .local/validation/structured-gate/camera_a/repeat_01/model-counterfactuals.json
+```
+
+The output reports sensitivity relative to the retained-data baseline, not ground-truth pose
+bias. It is analysis-only evidence and cannot release a policy.
 
 The fixed workflow defines `workspace` as the persisted ChArUco target frame and emits
 `T_workspace_from_<camera>/ir_left_optical` inside a validated `CameraBundle`. The camera
@@ -142,29 +156,42 @@ pose repeatability rather than recalibrating intrinsics. See
 [fixed-camera provisioning](docs/fixed-camera-provisioning.md), and
 [calibration quality](docs/calibration-quality.md).
 
-For new fixed-camera deployments, `target.detection_policy: uncertainty_validated` is recommended.
+For candidate validation, `target.detection_policy: uncertainty_validated` selects the historical
+v1 HOLD profile; it is not currently eligible for a production provision. The separately named
+`uncertainty_validated_v2` structured policy is also a HOLD candidate. This codebase has no
+authenticated release loader; a future release attempt additionally requires a preregistered
+manifest and an untouched holdout meeting every bound.
 Coverage is still reported as operator guidance and a target-size warning, but it is not pose
 accuracy and is not a hard gate in this policy. Acceptance instead requires detection integrity,
-PnP, a gross model-consistency reprojection gate, scaled-Jacobian observability, bounded
+PnP, a catastrophic scalar reprojection ceiling, scaled-Jacobian observability, bounded
 conditional pose uncertainty, resolved planar-pose ambiguity, temporal repeatability,
 split-half stability, and native-depth sanity. Reprojection residuals already determine the
 pixel-noise estimate used by covariance, so the legacy 0.5/1.0 px precision thresholds are not
 applied again as primary hard gates under `uncertainty_validated`; current 1.5/2.0 px gross
-RMSE/p95 limits reject clearly inconsistent projection models. Residual vector fields remain
-diagnostic-only.
+RMSE/p95 limits reject catastrophic projection failures. The candidate structured diagnostic uses
+held-out spatial prediction, an engineering amplitude floor, and a deterministic whole-vector
+permutation null. Its primary final diagnostic averages repeats by physical corner ID; per-frame
+structure remains diagnostic-only. Neither residual magnitude nor conditional covariance proves
+that K, D, or target geometry is correct.
 Low coverage does not guarantee a pass; it only stops coverage alone from rejecting an otherwise
 well-observed pose. `legacy_strict` and `pose_validated` retain their historical behavior.
 
-Target preflight and provision preflight answer different questions. A passing target preflight
-establishes target detection and pose observability; it does not guarantee that raw-stream,
+Target preflight and provision preflight answer different questions. For the uncertainty policy,
+target preflight reports `NUMERICAL_PASS RELEASE_HOLD` when target detection and pose
+observability pass; it does not guarantee that raw-stream,
 fixed-frame count/ratio, final reprojection, repeatability, split-half, or native-depth gates will
-pass. Use `target preflight -> provision preflight -> provision fixed -> provision validate`.
+pass. While the preset is HOLD, stop after `target preflight -> provision preflight`. Continue to
+`provision fixed -> provision validate` only in a future implementation that adds an authenticated
+criteria/holdout loader and then produces an explicitly hash-bound `RELEASED` preset.
 
-The policy is especially useful for the 500 x 700 mm, 5 x 7, 100 mm-square, 75 mm-marker,
+Synthetic development includes the 500 x 700 mm, 5 x 7, 100 mm-square, 75 mm-marker,
 `DICT_4X4_50` board when a D435i must remain outside the robot workspace or view it obliquely.
 Board size never creates an automatic pass: marker pixel scale, localization, uncertainty, and all
 physical checks still apply. Raw-stream validation is an independent prerequisite and is never
 bypassed by pose observability.
+
+The current real structured-gate experiment uses the fixed A4 target only.
+`REAL_500X700_STRUCTURED_GATE_VALIDATION=DEFERRED`.
 
 `TargetDetector` is a hardware-independent plugin contract. The ChArUco implementation
 returns image points, stable point IDs, persisted canonical target points, and 2D quality

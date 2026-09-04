@@ -25,7 +25,7 @@ rejected against persisted translation and geodesic-rotation thresholds, then al
 correspondences jointly refine one shared pose. Even and odd frames are independently
 refined for split-half stability.
 
-With `uncertainty_validated`, every LM-refined frame also evaluates the analytic OpenCV projection
+With the historical HOLD `uncertainty_validated_v1`, every LM-refined frame also evaluates the analytic OpenCV projection
 Jacobian for `p = [rvec_rad, tvec_m]`. Translation columns are scaled by the RMS target radius
 before rank, singular values, and condition number are computed, so radians are not compared
 directly with metres. Component pixel residuals use `dof = max(2N - 6, 1)` and a 0.25 px release
@@ -39,7 +39,15 @@ The legacy 0.5 px RMSE and 1.0 px p95 precision limits remain hard per-frame and
 `sigma_px = max(0.25, sqrt(SSE / (2N - 6)))` and therefore propagates into pose covariance. The
 legacy precision limit is not applied a second time. A separate gross model-consistency gate uses
 1.5 px RMSE and 2.0 px p95 limits at both frame and final scope. These limits are intentionally
-separate persisted fields in `uncertainty_validated_v1`, not rewritten fixed-config values.
+separate persisted fields in `uncertainty_validated_v1`, not rewritten fixed-config values. This
+preset is not production eligible. New artifacts persist `release_state`, criteria/manifest
+identity, and distinct gross-scalar, structured-residual, and observability decisions. The final
+structured candidate groups `observed - projected` vectors by physical corner ID before spatial
+cross-validation and permutation testing; per-frame structure remains diagnostic-only while HOLD.
+The artifact also identifies the additive `uncertainty_validated_v2` successor separately. It is
+HOLD and non-enforcing; this codebase has no authenticated criteria/holdout loader that can release
+it. A future version would require that implementation as well as a preregistered manifest and a
+passing unopened holdout.
 
 Each solved frame also persists observed/projected UV, du/dv, residual norm, normalized-radius
 bins, Pearson/Spearman trends, and quadrant vector statistics. These vector-field measurements help

@@ -4,11 +4,10 @@ Fixed provisioning combines existing CameraRig contracts behind one command. One
 YAML identifies the physical device, active profiles, capture policy, pinned target,
 workspace transform, reference stream, and numerical quality thresholds.
 
-```bash
-camera-rig provision fixed \
-  --config .local/configs/fixed_provision.yaml \
-  --output .local/artifacts/fixed_camera
-```
+The historical `uncertainty_validated_v1` and additive `uncertainty_validated_v2` candidate are
+both HOLD. They cannot run canonical `provision fixed`; use the retained live preflight below and
+stop. The publication examples later in this document apply only to legacy policies or to a future
+authenticated release implementation.
 
 Use `--dry-run` to validate configuration, the complete target artifact and its pinned
 SHA-256, workspace semantics, output policy, and optional dependencies. A dry run does
@@ -20,7 +19,8 @@ Before publication, run the live viability preflight:
 camera-rig provision preflight \
   --config .local/configs/fixed_provision.yaml \
   --report .local/reports/fixed-provision-preflight.json \
-  --overlays .local/overlays/fixed-provision-preflight
+  --overlays .local/overlays/fixed-provision-preflight \
+  --evidence-root .local/validation/structured-gate/camera_a/repeat_01
 ```
 
 Unlike `--dry-run`, this opens the camera. It consumes the complete provision YAML and calls the
@@ -63,8 +63,10 @@ if camera-rig provision fixed \
 fi
 ```
 
-A target preflight PASS is not a fixed-provision viability guarantee. The recommended operator
-sequence is target preflight, provision preflight, fixed provision, then provision validation.
+A target preflight `NUMERICAL_PASS RELEASE_HOLD` is not a fixed-provision viability guarantee.
+While either uncertainty
+candidate is HOLD, the required operator sequence stops after target preflight and retained
+provision preflight. Fixed provision and provision validation remain `NOT_RUN`.
 
 Validate a completed artifact with:
 

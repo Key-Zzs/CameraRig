@@ -21,7 +21,8 @@ The legacy fixed-camera precision gates (unchanged for `legacy_strict` and
 | Native-depth median absolute error | at most 20 mm |
 | Native-depth p95 absolute error | at most 40 mm |
 
-The current `uncertainty_validated_v1` thresholds are:
+The historical `uncertainty_validated_v1` thresholds are **CANDIDATE / HOLD**. They are not a
+frozen release preset and cannot publish a canonical provision:
 
 | Check | Limit |
 | --- | ---: |
@@ -51,6 +52,50 @@ case represents the 5-by-7, 500-by-700 mm deployment board. The sweep brackets t
 numerical limits directly: translation has cases at 4.995/5.004 mm, rotation at
 1.990/2.002 deg, and scaled condition at 99.83/100.16. It contains 1,034 passes, 1,270
 fails, and 583 statistically competitive, materially distinct planar alternatives.
+
+The structured candidate uses `residual = observed - projected`. Dimensionless projected image
+coordinates and isotropically normalized board coordinates feed a small image/board union model.
+Four deterministic spatial checkerboard folds fit training-mean-centered, fold-scaled ridge
+regressions. The primary effect is held-out explained residual energy against the training-fold
+mean-vector baseline. A 999-permutation, frozen-seed, whole-vector null test refits every fold.
+A structured failure requires significance, a minimum held-out effect, and a minimum predicted
+structured amplitude. Insufficient corner/fold/rank support fails closed. For the final shared
+pose, residuals are first averaged by physical corner ID; count, component standard deviations,
+and standard errors remain diagnostics, and the corner means—not 60×N samples—enter the test.
+
+Development evidence is deliberately not release evidence. The frozen split binds each synthetic
+base family to all of its K/D/target/warp/local/combined descendants. Threshold scans consume only
+development families. Holdout metrics remain unopened until release criteria and their SHA-256 are
+committed. Planar monocular reprojection cannot identify every uniformly scaled target or
+projectively confounded K error, so trusted target metrology and native depth remain independent
+hard gates; failure to meet the preregistered false-accept bound leaves the preset HOLD.
+
+The additive structured successor is explicitly named `uncertainty_validated_v2`; its current
+release state is also **HOLD**. The tracked split receipt binds 3,600 deterministic families
+(2,895 development, 705 unopened holdout) to generated-manifest SHA-256
+`170ef31aa7e77b5c993657abdb0eef42a676f20219c68ebb80e064df52315794`. Statistical decisions use
+one worst-case Bernoulli outcome per counterfactual family, not one per correlated descendant. On
+development data, the image/board union candidate rejects 16/223 engineering-good final families
+and accepts at least one pose-biased descendant in 200/228 negative families; the Wilson upper
+bounds are 0.113 and 0.914. It accepts a challenging descendant in 200/207 eligible families
+(upper bound 0.984). None of 4,500 scanned development threshold tuples meets all three 5% bounds.
+This closes development as HOLD without opening holdout outcomes. Moreover, the planned final
+holdout contains only 55 families, whose zero-error Wilson upper bound is 0.0653, so this split
+cannot establish the requested 5% final bound and is explicitly not release-eligible. A future
+attempt requires a new unopened split/version with adequate overall and subgroup quotas. These
+results demonstrate the planar identifiability limit rather than establishing a favorable
+threshold. The tracked development receipt binds the private development evidence SHA-256
+`214be832de39c182bd78533fe843809d63d47829ad67769d83a89f14ad1fff6c` and threshold-scan SHA-256
+`ef86c44e2b910f3ec58e20ad1baf6912cbcfc511d9d017e847f2f92dfe16a6e4`.
+The final shared-pose run was a representative development screen with one positive plus nine
+fixed negative variants per family, not a release suite. Before any future release attempt, a new
+receipt must bind either the complete dual-sign, multi-amplitude K/D/target/warp grid or a
+statistically justified reduction protocol before its new holdout is opened.
+
+`camera-rig calibration evaluate-model-counterfactuals` applies focal, principal-point,
+distortion, target-scale, and coherent planar-geometry perturbations to retained observations in
+memory. Its pose deltas are baseline sensitivity because real ground truth is absent. The command
+writes a separate private analysis report and never modifies a production artifact.
 
 The independent gross-reprojection release candidate is evaluated with a 45-case sweep:
 nine injected vector RMSE levels (0.1, 0.25, 0.5, 0.6, 0.75, 1.0, 1.5, 2.0, and 3.0 px)

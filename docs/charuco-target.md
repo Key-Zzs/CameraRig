@@ -147,7 +147,8 @@ Coverage remains the convex-hull area of detected ChArUco corners divided by the
 The new policy records `coverage.hard_gate: false`, the observed value, and the 5% recommendation.
 
 For a 500 x 700 mm, 5 x 7 target with 100 mm squares, 75 mm markers, and `DICT_4X4_50`,
-`uncertainty_validated` is the recommended single-camera policy when the camera must stay outside
-the robot workspace or view the board obliquely. The large board does not automatically pass:
+`uncertainty_validated` is a HOLD-only single-camera evaluation policy when the camera must stay
+outside the robot workspace or view the board obliquely; it is not recommended for production
+provision. The large board does not automatically pass:
 marker pixel scale, corner localization, uncertainty, ambiguity, repeatability, split-half, and
 native-depth checks remain mandatory.

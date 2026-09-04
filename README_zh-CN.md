@@ -119,14 +119,28 @@ camera-rig provision fixed \
 camera-rig provision preflight \
   --config .local/configs/fixed_provision.yaml \
   --report .local/reports/fixed-provision-preflight.json \
-  --overlays .local/overlays/fixed-provision-preflight
-if camera-rig provision fixed \
-    --config .local/configs/fixed_provision.yaml \
-    --output .local/artifacts/fixed_camera; then
-  camera-rig provision validate \
-    --artifact .local/artifacts/fixed_camera
-fi
+  --overlays .local/overlays/fixed-provision-preflight \
+  --evidence-root .local/validation/structured-gate/camera_a/repeat_01
 ```
+
+`uncertainty_validated_v1` 的显式状态是 `HOLD`，不是 frozen release preset。指定
+`--evidence-root` 时，live preflight 会保留私有 capture/evaluation 证据；即使候选数值检查
+通过，也会报告 `UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED` 与 `would_publish=false`。
+`provision fixed` 会拒绝为该 HOLD 策略构建 canonical CameraBundle。保留的 capture 只能用于
+离线验证，不能当作 provision。
+
+可在不修改 capture、calibration 或 provision artifact 的前提下，对某次保留采集执行内存中的
+K/D/target 反事实分析：
+
+```bash
+camera-rig calibration evaluate-model-counterfactuals \
+  --detection-report .local/validation/structured-gate/camera_a/repeat_01/target/detection_report.json \
+  --factory-calibration .local/validation/structured-gate/camera_a/repeat_01/factory/factory_calibration.json \
+  --output .local/validation/structured-gate/camera_a/repeat_01/model-counterfactuals.json
+```
+
+报告中的位姿变化是相对 retained-data baseline 的敏感度，不是 ground-truth pose bias；该输出
+只能作为分析证据，不能据此 release 策略。
 
 固定相机工作流把 `workspace` 明确定义为持久化的 ChArUco 目标板坐标系，并在验证通过的
 `CameraBundle` 中输出 `T_workspace_from_<camera>/ir_left_optical`。采集期间相机和目标板都保持
@@ -135,23 +149,36 @@ fi
 [固定相机配置](docs/fixed-camera-provisioning.md) 与
 [标定质量](docs/calibration-quality.md)。
 
-新的固定相机部署推荐设置 `target.detection_policy: uncertainty_validated`。coverage 仍用于操作员
+候选验证可设置 `target.detection_policy: uncertainty_validated`，它选择历史 v1 HOLD profile，
+当前不具备 production provision 资格。独立命名的 `uncertainty_validated_v2` structured
+policy 同样保持 HOLD；当前代码没有 authenticated release loader。未来 release 尝试还必须
+提交预注册 manifest，并让未开启的 holdout 满足全部界限。coverage 仍用于操作员
 引导和标定板尺寸诊断，但 coverage 不等于位姿精度，在此策略中也不是硬门槛。核心验收改为检测
-完整性、PnP、gross model-consistency 重投影门、缩放 Jacobian 可观测性、有界条件位姿不确定度、
+完整性、PnP、灾难性 scalar 重投影上限、缩放 Jacobian 可观测性、有界条件位姿不确定度、
 平面位姿歧义、时间重复性、split-half 稳定性和原生深度 sanity。重投影残差已经进入 covariance 的
 像素噪声估计，因此 `uncertainty_validated` 不会再把 legacy 0.5/1.0 px precision 阈值作为 primary
-hard gate；当前 1.5/2.0 px gross RMSE/p95 候选门仍会拒绝明显投影模型不一致。残差向量场仅作诊断。
+hard gate；当前 1.5/2.0 px gross RMSE/p95 候选门只用于拦截灾难性投影错误。候选 structured
+diagnostic 使用空间 holdout 预测、工程幅值下限和确定性整向量 permutation null；最终主
+diagnostic 先按物理 corner ID 对重复观测求均值，逐帧 structure 仍只作诊断。scalar magnitude
+和条件 covariance 都不能证明 K、D 或 target geometry 正确。
 低 coverage 并不保证 PASS；它只是不再因 coverage 数值本身
 拒绝一个实际可观的位姿。`legacy_strict` 与 `pose_validated` 的历史语义保持不变。
 
-target preflight 与 provision preflight 回答不同问题。前者 PASS 只说明目标检测与位姿可观测，
+target preflight 与 provision preflight 回答不同问题。对于 uncertainty policy，前者的
+`NUMERICAL_PASS RELEASE_HOLD` 只说明目标检测与位姿可观测，
 不保证 raw-stream、fixed-frame 数量/比例、最终重投影、重复性、split-half 或原生深度会通过。
-推荐顺序为 `target preflight -> provision preflight -> provision fixed -> provision validate`。
+preset 仍为 HOLD 时必须在 `target preflight -> provision preflight` 后停止。只有显式绑定
+release manifest hash 的 structured preset 成为 `RELEASED` 后，才能继续；该路径必须由未来
+版本新增 authenticated criteria/holdout loader 后实现，当前代码无法开启
+`provision fixed -> provision validate`。
 
-当 D435i 因机械臂工作空间避障必须放在较远位置或倾斜观察时，该策略尤其适合 500 x 700 mm、
+合成开发覆盖 500 x 700 mm、
 5 x 7、100 mm 方格、75 mm marker、`DICT_4X4_50` 大板。但大板不会自动 PASS：marker 像素
 尺度、角点定位、位姿不确定度以及所有物理检查仍必须通过。原始数据流验证是独立前置门槛，
 `uncertainty_validated` 不会绕过或修改它。
+
+当前真实 structured-gate 实验只使用已固定的 A4 target；
+`REAL_500X700_STRUCTURED_GATE_VALIDATION=DEFERRED`。
 
 `TargetDetector` 是硬件无关的插件契约。ChArUco 实现返回图像点、稳定 point ID、持久化的
 目标板 canonical 点和二维质量指标，不估计目标位姿或相机外参。打印和验证细节见
