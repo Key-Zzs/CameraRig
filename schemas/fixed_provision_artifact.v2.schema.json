@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key-zzs.github.io/CameraRig/schemas/fixed_provision_artifact.v2.schema.json",
+  "title": "CameraRig bootstrap-qualified fixed-camera provision artifact v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "created_at",
+    "camera_rig_version",
+    "status",
+    "artifacts",
+    "diagnostics",
+    "quality",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "camera-rig.fixed-provision-artifact.v2"},
+    "artifact_id": {"type": "string", "format": "uuid"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "camera_rig_version": {"type": "string", "minLength": 1},
+    "status": {"const": "passed"},
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "camera_bundle",
+        "factory_calibration",
+        "capture_manifest",
+        "target_spec",
+        "target_detection",
+        "fixed_calibration",
+        "stream_validation",
+        "target_scale_acceptance_policy",
+        "target_metrology",
+        "metric_depth_receipt",
+        "bootstrap_qualification"
+      ],
+      "properties": {
+        "camera_bundle": {"$ref": "#/$defs/camera_bundle_reference"},
+        "factory_calibration": {"$ref": "#/$defs/factory_calibration_reference"},
+        "capture_manifest": {"$ref": "#/$defs/capture_manifest_reference"},
+        "target_spec": {"$ref": "#/$defs/target_spec_reference"},
+        "target_detection": {"$ref": "#/$defs/target_detection_reference"},
+        "fixed_calibration": {"$ref": "#/$defs/fixed_calibration_reference"},
+        "stream_validation": {"$ref": "#/$defs/stream_validation_reference"},
+        "target_scale_acceptance_policy": {"$ref": "#/$defs/target_scale_acceptance_policy_reference"},
+        "target_metrology": {"$ref": "#/$defs/target_metrology_reference"},
+        "metric_depth_receipt": {"$ref": "#/$defs/metric_depth_reference"},
+        "bootstrap_qualification": {"$ref": "#/$defs/bootstrap_reference"}
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_detection", "fixed_calibration"],
+      "properties": {
+        "target_detection": {
+          "$ref": "fixed_provision_artifact.v1.schema.json#/$defs/target_detection_overlays"
+        },
+        "fixed_calibration": {
+          "$ref": "fixed_provision_artifact.v1.schema.json#/$defs/fixed_calibration_overlays"
+        }
+      }
+    },
+    "quality": {"$ref": "camera_bundle.v1.schema.json#/$defs/quality"},
+    "provenance": {"type": "object"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "camera_bundle_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "camera_bundle.json"}}
+    },
+    "factory_calibration_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "factory/factory_calibration.json"}}
+    },
+    "capture_manifest_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "capture/calibration_snapshot/manifest.json"}}
+    },
+    "target_spec_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "target/target_spec.json"}}
+    },
+    "target_detection_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "target/detection_report.json"}}
+    },
+    "fixed_calibration_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "calibration/fixed_calibration.json"}}
+    },
+    "stream_validation_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "reports/stream_validation.json"}}
+    },
+    "target_metrology_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "target/target_metrology.json"}}
+    },
+    "target_scale_acceptance_policy_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "target/target_scale_acceptance_policy.json"}}
+    },
+    "metric_depth_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "reports/metric_depth_integrity.json"}}
+    },
+    "bootstrap_reference": {
+      "$ref": "#/$defs/reference",
+      "properties": {"path": {"const": "reports/bootstrap_qualification.json"}}
+    }
+  }
+}

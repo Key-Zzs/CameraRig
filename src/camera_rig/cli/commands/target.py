@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from camera_rig.config.loader import load_config
@@ -15,6 +16,15 @@ from camera_rig.targets.charuco.identification import (
 )
 from camera_rig.targets.charuco.spec import load_charuco_target_spec
 from camera_rig.targets.io import validate_target_artifact
+from camera_rig.targets.metrology import (
+    TargetScaleAcceptance,
+    build_target_scale_acceptance_policy,
+    evaluate_target_metrology,
+    load_target_metrology,
+    load_target_scale_acceptance_policy,
+    write_target_metrology,
+    write_target_scale_acceptance_policy,
+)
 from camera_rig.targets.preflight import run_target_preflight
 from camera_rig.targets.validation import detect_image, validate_capture_artifact_target
 
@@ -33,6 +43,41 @@ def add_target_commands(
     inspect = subcommands.add_parser("inspect", help="inspect a resolved target artifact")
     inspect.add_argument("--target", type=Path, required=True)
     inspect.set_defaults(handler=_inspect)
+
+    policy = subcommands.add_parser(
+        "metrology-policy-create",
+        help="freeze target-scale acceptance before physical measurements",
+    )
+    policy.add_argument("--target", type=Path, required=True)
+    policy.add_argument("--allowed-translation-error-mm", type=float, required=True)
+    policy.add_argument("--maximum-working-distance-mm", type=float, required=True)
+    policy.add_argument("--authority", required=True)
+    policy.add_argument("--output", type=Path, required=True)
+    policy.set_defaults(handler=_create_metrology_policy)
+
+    metrology = subcommands.add_parser(
+        "metrology-create", help="create a measured physical-target metrology receipt"
+    )
+    metrology.add_argument("--target", type=Path, required=True)
+    metrology.add_argument("--horizontal-square-count", type=int, required=True)
+    metrology.add_argument("--vertical-square-count", type=int, required=True)
+    metrology.add_argument("--horizontal-mm", type=float, action="append", required=True)
+    metrology.add_argument("--vertical-mm", type=float, action="append", required=True)
+    metrology.add_argument("--measurement-method", required=True)
+    metrology.add_argument("--instrument", required=True)
+    metrology.add_argument("--instrument-resolution-mm", type=float, required=True)
+    metrology.add_argument("--measurement-uncertainty-mm", type=float, required=True)
+    metrology.add_argument("--acceptance-policy", type=Path, required=True)
+    metrology.add_argument("--operator", required=True)
+    metrology.add_argument("--output", type=Path, required=True)
+    metrology.set_defaults(handler=_create_metrology)
+
+    metrology_validate = subcommands.add_parser(
+        "metrology-validate", help="validate a target metrology receipt and target binding"
+    )
+    metrology_validate.add_argument("--target", type=Path, required=True)
+    metrology_validate.add_argument("--receipt", type=Path, required=True)
+    metrology_validate.set_defaults(handler=_validate_metrology)
 
     detect = subcommands.add_parser("detect", help="detect a target in one offline image")
     detect.add_argument("--target", type=Path, required=True)
@@ -123,6 +168,63 @@ def _inspect(arguments: argparse.Namespace) -> int:
         f"sha256={target.artifact_sha256}"
     )
     return 0
+
+
+def _create_metrology(arguments: argparse.Namespace) -> int:
+    target = validate_target_artifact(arguments.target)
+    policy = load_target_scale_acceptance_policy(
+        arguments.acceptance_policy, expected_target_sha256=target.artifact_sha256
+    )
+    receipt = evaluate_target_metrology(
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        target=target,
+        horizontal_square_count=arguments.horizontal_square_count,
+        vertical_square_count=arguments.vertical_square_count,
+        horizontal_measurements_mm=tuple(arguments.horizontal_mm),
+        vertical_measurements_mm=tuple(arguments.vertical_mm),
+        measurement_method=arguments.measurement_method,
+        instrument=arguments.instrument,
+        instrument_resolution_mm=arguments.instrument_resolution_mm,
+        measurement_uncertainty_mm=arguments.measurement_uncertainty_mm,
+        acceptance_policy=policy,
+        provenance={"operator": arguments.operator, "source": "physical_measurement"},
+    )
+    write_target_metrology(arguments.output, receipt)
+    print(
+        f"target metrology: {receipt.status} "
+        f"(horizontal_scale={receipt.results['horizontal_scale']:.8f}, "
+        f"vertical_scale={receipt.results['vertical_scale']:.8f})"
+    )
+    return 0 if receipt.status == "PASS" else 2
+
+
+def _create_metrology_policy(arguments: argparse.Namespace) -> int:
+    target = validate_target_artifact(arguments.target)
+    policy = build_target_scale_acceptance_policy(
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        target=target,
+        acceptance=TargetScaleAcceptance(
+            allowed_translation_error_mm=arguments.allowed_translation_error_mm,
+            maximum_working_distance_mm=arguments.maximum_working_distance_mm,
+        ),
+        provenance={
+            "authority": arguments.authority,
+            "measurement_values_available": False,
+        },
+    )
+    write_target_scale_acceptance_policy(arguments.output, policy)
+    print(f"target metrology acceptance policy: FROZEN ({policy['policy_fingerprint']})")
+    return 0
+
+
+def _validate_metrology(arguments: argparse.Namespace) -> int:
+    target = validate_target_artifact(arguments.target)
+    receipt = load_target_metrology(
+        arguments.receipt,
+        expected_target=target,
+    )
+    print(f"valid {receipt.schema_version}: status={receipt.status}")
+    return 0 if receipt.status == "PASS" else 2
 
 
 def _detect(arguments: argparse.Namespace) -> int:

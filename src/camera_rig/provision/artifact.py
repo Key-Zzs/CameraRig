@@ -21,6 +21,7 @@ from camera_rig.core.quality import QualityReport
 from camera_rig.version import __version__
 
 FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION: Final = "camera-rig.fixed-provision-artifact.v1"
+FIXED_PROVISION_ARTIFACT_V2_SCHEMA_VERSION: Final = "camera-rig.fixed-provision-artifact.v2"
 
 ARTIFACT_PATHS: Final = {
     "camera_bundle": "camera_bundle.json",
@@ -30,6 +31,13 @@ ARTIFACT_PATHS: Final = {
     "target_detection": "target/detection_report.json",
     "fixed_calibration": "calibration/fixed_calibration.json",
     "stream_validation": "reports/stream_validation.json",
+}
+ARTIFACT_PATHS_V2: Final = {
+    **ARTIFACT_PATHS,
+    "target_scale_acceptance_policy": "target/target_scale_acceptance_policy.json",
+    "target_metrology": "target/target_metrology.json",
+    "metric_depth_receipt": "reports/metric_depth_integrity.json",
+    "bootstrap_qualification": "reports/bootstrap_qualification.json",
 }
 CAPTURE_ROOT: Final = "capture/calibration_snapshot"
 OVERLAY_LABELS: Final = ("best", "median_quality", "worst_accepted")
@@ -85,7 +93,7 @@ class FixedProvisionManifest:
     quality: QualityReport
     provenance: dict[str, object]
     status: str = field(default="passed", init=False)
-    schema_version: str = field(default=FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION, init=False)
+    schema_version: str = FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         try:
@@ -98,9 +106,10 @@ class FixedProvisionManifest:
             raise ContractError("created_at must be an ISO-8601 date-time") from error
         require_non_empty(self.camera_rig_version, "camera_rig_version")
         artifacts = dict(self.artifacts)
-        if set(artifacts) != set(ARTIFACT_PATHS):
+        expected_paths = _artifact_paths_for_schema(self.schema_version)
+        if set(artifacts) != set(expected_paths):
             raise ContractError("manifest artifacts have missing or unknown entries")
-        for name, expected_path in ARTIFACT_PATHS.items():
+        for name, expected_path in expected_paths.items():
             if artifacts[name].path != expected_path:
                 raise ContractError(f"manifest {name} path must be {expected_path!r}")
         diagnostics = {group: dict(references) for group, references in self.diagnostics.items()}
@@ -144,10 +153,8 @@ class FixedProvisionManifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> FixedProvisionManifest:
-        if data.get("schema_version") != FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION:
-            raise ContractError(
-                f"schema_version must be {FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION!r}"
-            )
+        schema_version = _string(data.get("schema_version"), "schema_version")
+        _artifact_paths_for_schema(schema_version)
         if data.get("status") != "passed":
             raise ContractError("fixed provision manifest status must be passed")
         artifacts = _object(data["artifacts"], "artifacts")
@@ -171,6 +178,7 @@ class FixedProvisionManifest:
             },
             quality=QualityReport.from_dict(_object(data["quality"], "quality")),
             provenance=_object(data["provenance"], "provenance"),
+            schema_version=schema_version,
         )
 
 
@@ -187,6 +195,10 @@ class FixedProvisionArtifactInputs:
     stream_validation: Path
     target_detection_overlays: ProvisionOverlayInputs
     fixed_calibration_overlays: ProvisionOverlayInputs
+    target_scale_acceptance_policy: Path | None = None
+    target_metrology: Path | None = None
+    metric_depth_receipt: Path | None = None
+    bootstrap_qualification: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -233,10 +245,26 @@ def write_fixed_provision_artifact(
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(dir=target.parent, prefix=f".{target.name}.tmp-"))
     try:
-        diagnostic_paths = _copy_inputs(temporary, inputs)
+        v2_values = (
+            inputs.target_scale_acceptance_policy,
+            inputs.target_metrology,
+            inputs.metric_depth_receipt,
+            inputs.bootstrap_qualification,
+        )
+        if any(value is not None for value in v2_values) and not all(
+            value is not None for value in v2_values
+        ):
+            raise ArtifactError("bootstrap provision v2 inputs must be supplied together")
+        schema_version = (
+            FIXED_PROVISION_ARTIFACT_V2_SCHEMA_VERSION
+            if all(value is not None for value in v2_values)
+            else FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION
+        )
+        artifact_paths = _artifact_paths_for_schema(schema_version)
+        diagnostic_paths = _copy_inputs(temporary, inputs, artifact_paths=artifact_paths)
         references = {
             name: ArtifactReference(path=relative, sha256=sha256_file(temporary / relative))
-            for name, relative in ARTIFACT_PATHS.items()
+            for name, relative in artifact_paths.items()
         }
         diagnostic_references = {
             group: {
@@ -256,6 +284,7 @@ def write_fixed_provision_artifact(
             diagnostics=diagnostic_references,
             quality=passed_provision_quality(),
             provenance=provenance,
+            schema_version=schema_version,
         )
         atomic_write_json(temporary / "manifest.json", manifest.to_dict())
         _write_checksums(temporary)
@@ -270,17 +299,30 @@ def write_fixed_provision_artifact(
         raise
 
 
-def _copy_inputs(root: Path, inputs: FixedProvisionArtifactInputs) -> dict[str, dict[str, str]]:
+def _copy_inputs(
+    root: Path,
+    inputs: FixedProvisionArtifactInputs,
+    *,
+    artifact_paths: dict[str, str],
+) -> dict[str, dict[str, str]]:
     from camera_rig.artifacts.capture_validation import validate_capture_artifact
 
     capture = Path(inputs.capture_artifact)
     validate_capture_artifact(capture)
-    _copy_file(inputs.camera_bundle, root / ARTIFACT_PATHS["camera_bundle"])
-    _copy_file(inputs.factory_calibration, root / ARTIFACT_PATHS["factory_calibration"])
-    _copy_file(inputs.target_spec, root / ARTIFACT_PATHS["target_spec"])
-    _copy_file(inputs.target_detection, root / ARTIFACT_PATHS["target_detection"])
-    _copy_file(inputs.fixed_calibration, root / ARTIFACT_PATHS["fixed_calibration"])
-    _copy_file(inputs.stream_validation, root / ARTIFACT_PATHS["stream_validation"])
+    _copy_file(inputs.camera_bundle, root / artifact_paths["camera_bundle"])
+    _copy_file(inputs.factory_calibration, root / artifact_paths["factory_calibration"])
+    _copy_file(inputs.target_spec, root / artifact_paths["target_spec"])
+    _copy_file(inputs.target_detection, root / artifact_paths["target_detection"])
+    _copy_file(inputs.fixed_calibration, root / artifact_paths["fixed_calibration"])
+    _copy_file(inputs.stream_validation, root / artifact_paths["stream_validation"])
+    for name, source in (
+        ("target_scale_acceptance_policy", inputs.target_scale_acceptance_policy),
+        ("target_metrology", inputs.target_metrology),
+        ("metric_depth_receipt", inputs.metric_depth_receipt),
+        ("bootstrap_qualification", inputs.bootstrap_qualification),
+    ):
+        if source is not None:
+            _copy_file(source, root / artifact_paths[name])
     capture_destination = root / CAPTURE_ROOT
     capture_destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(capture, capture_destination)
@@ -418,6 +460,14 @@ def _reject_nonportable_values(value: object, path: str) -> None:
 def _require_digest(value: str, name: str) -> None:
     if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
         raise ContractError(f"{name} must be a lowercase SHA-256 digest")
+
+
+def _artifact_paths_for_schema(schema_version: str) -> dict[str, str]:
+    if schema_version == FIXED_PROVISION_ARTIFACT_SCHEMA_VERSION:
+        return dict(ARTIFACT_PATHS)
+    if schema_version == FIXED_PROVISION_ARTIFACT_V2_SCHEMA_VERSION:
+        return dict(ARTIFACT_PATHS_V2)
+    raise ContractError("fixed provision manifest schema is unsupported")
 
 
 def _object(value: object, name: str) -> dict[str, object]:

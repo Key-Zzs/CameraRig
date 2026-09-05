@@ -34,6 +34,16 @@
               "type": "object", "additionalProperties": false,
               "required": ["source_type", "physical_measurement_sha256", "geometry_policy"],
               "properties": {"source_type": {"const": "existing_physical"}, "physical_measurement_sha256": {"$ref": "#/$defs/digest"}, "geometry_policy": {"type": "string", "minLength": 1}}
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["target_metrology_status", "target_metrology_sha256", "geometry_policy"],
+              "properties": {"target_metrology_status": {"const": "PASS"}, "target_metrology_sha256": {"$ref": "#/$defs/digest"}, "geometry_policy": {"type": "string", "minLength": 1}}
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["measurement_status", "geometry_policy"],
+              "properties": {"measurement_status": {"const": "NOT_PROVIDED"}, "geometry_policy": {"type": "string", "minLength": 1}}
             }
           ]
         }

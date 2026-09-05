@@ -28,6 +28,9 @@ from camera_rig.core.quality import QualityReport
 from camera_rig.core.stream import StreamProfile
 from camera_rig.core.transform_graph import TransformGraph
 from camera_rig.core.transforms import RigidTransform
+from camera_rig.provision.bootstrap_qualification import (
+    validate_bootstrap_qualification_data,
+)
 
 MINIMUM_TARGET_DISTANCE_M: Final = 0.1
 MAXIMUM_TARGET_DISTANCE_M: Final = 5.0
@@ -60,9 +63,16 @@ def build_fixed_camera_bundle(
     target_detection: TargetDetectionArtifact,
     fixed_calibration: FixedCalibrationArtifact,
     provenance: dict[str, object],
+    bootstrap_qualification: dict[str, object] | None = None,
 ) -> CameraBundle:
     """Build one passing bundle from already-completed, mutually bound evidence."""
-    _require_passing_evidence(factory, stream_validation, target_detection, fixed_calibration)
+    _require_passing_evidence(
+        factory,
+        stream_validation,
+        target_detection,
+        fixed_calibration,
+        bootstrap_qualification=bootstrap_qualification,
+    )
     calibration = factory.calibration
     fixed_mount = fixed_calibration.fixed_mount_calibration
     reference_stream, distance_m = _validate_camera_semantics(
@@ -83,6 +93,25 @@ def build_fixed_camera_bundle(
         "target_detection": _artifact_digest(target_detection.to_dict()),
         "fixed_calibration": _artifact_digest(fixed_calibration.to_dict()),
     }
+    if bootstrap_qualification is not None:
+        qualification = validate_bootstrap_qualification_data(bootstrap_qualification)
+        expected_fingerprint = fixed_camera_bundle_fingerprint(
+            factory=factory,
+            stream_validation=stream_validation,
+            target_detection=target_detection,
+            fixed_calibration=fixed_calibration,
+        )
+        if qualification["camera_bundle_fingerprint"] != expected_fingerprint:
+            raise ContractError("bootstrap qualification bundle fingerprint differs")
+        portable_provenance["calibration_authority"] = {
+            "schema_version": "camera-rig.calibration-authority.v1",
+            "qualification_scope": "bootstrap_only",
+            "production_authoritative": False,
+            "qualification_state": "BOOTSTRAP_QUALIFIED",
+            "qualification_fingerprint": qualification["qualification_fingerprint"],
+            "target_metrology_sha256": qualification["target_metrology_sha256"],
+            "metric_depth_receipt_sha256": qualification["metric_depth_receipt_sha256"],
+        }
     checks = {name: True for name in REQUIRED_FIXED_BUNDLE_CHECKS}
     quality = QualityReport(
         passed=True,
@@ -126,6 +155,9 @@ def validate_fixed_camera_bundle(bundle: CameraBundle) -> CameraBundle:
         raise ContractError("bundle provenance must contain the complete evidence SHA mapping")
     for name, digest in evidence.items():
         _require_digest(digest, f"provenance.evidence_sha256.{name}")
+    authority = bundle.provenance.get("calibration_authority")
+    if authority is not None:
+        _validate_bootstrap_authority(authority)
 
     reference_stream, distance_m = _validate_camera_semantics(
         bundle.stream_profiles,
@@ -198,6 +230,8 @@ def _require_passing_evidence(
     stream_validation: StreamValidationArtifact,
     target_detection: TargetDetectionArtifact,
     fixed_calibration: FixedCalibrationArtifact,
+    *,
+    bootstrap_qualification: dict[str, object] | None,
 ) -> None:
     if not factory.quality.passed:
         raise ContractError("factory calibration evidence must be passed")
@@ -214,14 +248,21 @@ def _require_passing_evidence(
         raise ContractError("fixed calibration evidence must be passed")
     if not fixed_calibration.fixed_mount_calibration.quality.passed:
         raise ContractError("fixed_mount_calibration quality must be passed")
-    if not solver_release_eligible(fixed_calibration.solver, acceptance):
+    if not solver_release_eligible(
+        fixed_calibration.solver,
+        acceptance,
+        bootstrap_qualification=bootstrap_qualification,
+    ):
         raise ContractError(
             "uncertainty_validated is not release-enabled; canonical provision is blocked"
         )
 
 
 def solver_release_eligible(
-    solver: Mapping[str, object], target_acceptance: Mapping[str, object]
+    solver: Mapping[str, object],
+    target_acceptance: Mapping[str, object],
+    *,
+    bootstrap_qualification: dict[str, object] | None = None,
 ) -> bool:
     """Validate policy agreement and fail closed for every uncertainty candidate."""
     known = {"legacy_strict", "pose_validated", "uncertainty_validated"}
@@ -237,7 +278,75 @@ def solver_release_eligible(
         return False
     if solver_policy != target_policy:
         return False
-    return solver_policy != "uncertainty_validated"
+    if solver_policy != "uncertainty_validated":
+        return True
+    if bootstrap_qualification is None:
+        return False
+    try:
+        report = validate_bootstrap_qualification_data(bootstrap_qualification)
+    except ArtifactError:
+        return False
+    return report.get("status") == "PASS"
+
+
+def fixed_camera_bundle_fingerprint(
+    *,
+    factory: FactoryCalibrationArtifact,
+    stream_validation: StreamValidationArtifact,
+    target_detection: TargetDetectionArtifact,
+    fixed_calibration: FixedCalibrationArtifact,
+) -> str:
+    """Fingerprint stable bundle content without creating an authority cycle."""
+    return _artifact_digest(
+        {
+            "device": factory.calibration.device.to_dict(),
+            "stream_profiles": {
+                name: value.to_dict()
+                for name, value in sorted(factory.calibration.stream_profiles.items())
+            },
+            "intrinsics": {
+                name: value.to_dict()
+                for name, value in sorted(factory.calibration.intrinsics.items())
+            },
+            "internal_transforms": [
+                value.to_dict() for value in factory.calibration.internal_transforms
+            ],
+            "depth_scale_m_per_unit": factory.calibration.depth_scale_m_per_unit,
+            "fixed_mount_calibration": fixed_calibration.fixed_mount_calibration.to_dict(),
+            "evidence_sha256": {
+                "factory_calibration": _artifact_digest(factory.to_dict()),
+                "stream_validation": _artifact_digest(stream_validation.to_dict()),
+                "target_detection": _artifact_digest(target_detection.to_dict()),
+                "fixed_calibration": _artifact_digest(fixed_calibration.to_dict()),
+            },
+        }
+    )
+
+
+def _validate_bootstrap_authority(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "qualification_scope",
+        "production_authoritative",
+        "qualification_state",
+        "qualification_fingerprint",
+        "target_metrology_sha256",
+        "metric_depth_receipt_sha256",
+    }:
+        raise ContractError("bundle calibration authority is incomplete")
+    if (
+        value.get("schema_version") != "camera-rig.calibration-authority.v1"
+        or value.get("qualification_scope") != "bootstrap_only"
+        or value.get("production_authoritative") is not False
+        or value.get("qualification_state") != "BOOTSTRAP_QUALIFIED"
+    ):
+        raise ContractError("bundle calibration authority semantics are invalid")
+    for name in (
+        "qualification_fingerprint",
+        "target_metrology_sha256",
+        "metric_depth_receipt_sha256",
+    ):
+        _require_digest(value.get(name), f"calibration_authority.{name}")
 
 
 def _validate_fixed_bindings(

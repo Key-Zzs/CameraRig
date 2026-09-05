@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from camera_rig.calibration.fixed.depth_sanity import evaluate_native_depth_sanity
+from camera_rig.calibration.fixed.depth_sanity import (
+    build_metric_depth_receipt,
+    evaluate_native_depth_sanity,
+    validate_native_depth_evaluation,
+)
 from camera_rig.calibration.fixed.overlays import select_overlay_frames, write_fixed_pose_overlay
 from camera_rig.calibration.pose import project_points_px
 from camera_rig.core.device_info import CameraDeviceInfo
+from camera_rig.core.errors import ContractError
 from camera_rig.core.factory_calibration import FactoryCalibration
 from camera_rig.core.frame import CameraFrame, StreamFrame
 from camera_rig.core.intrinsics import CameraIntrinsics
@@ -168,6 +174,108 @@ def test_native_depth_sanity_fails_a_gross_scale_or_direction_error() -> None:
     assert checks["valid_samples_at_least_minimum"] is True
     assert checks["median_absolute_error_within_limit"] is False
     assert checks["p95_absolute_error_within_limit"] is False
+
+
+def test_native_depth_sanity_fails_one_bad_frame_instead_of_hiding_it_in_median() -> None:
+    frames = _frames(750, count=1) + _frames(1000, count=1)
+    result = evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=frames,
+        frame_indices=(0, 1),
+    )
+    assert result["status"] == "FAIL"
+    assert result["passing_frame_count"] == 1
+    assert result["checks"]["all_evaluated_frames_pass_geometry"] is False
+
+
+def test_native_depth_sanity_fails_sparse_and_nonfinite_depth() -> None:
+    sparse = np.zeros((480, 640), dtype=np.float64)
+    sparse[239:242, 319:322] = np.nan
+    frame = CameraFrame(
+        camera_name="synthetic",
+        serial="test",
+        streams={"depth": StreamFrame("depth", sparse, frame_number=0)},
+        host_receive_timestamp_ns=0,
+    )
+    result = evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=(frame,),
+        frame_indices=(0,),
+        fail_closed=True,
+    )
+    assert result["status"] == "FAIL"
+    assert result["checks"]["valid_samples_at_least_minimum"] is False
+
+
+def test_metric_depth_receipt_rejects_status_only_forgery() -> None:
+    with pytest.raises(ContractError, match="evaluation fields"):
+        build_metric_depth_receipt(
+            evaluation={"status": "PASS"},
+            camera_identity_sha256="a" * 64,
+            target_identity_sha256="b" * 64,
+            factory_calibration_sha256="c" * 64,
+            capture_manifest_sha256="d" * 64,
+        )
+
+
+def test_metric_depth_evaluation_rejects_rehashed_check_forgery() -> None:
+    result = evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=_frames(750, count=1),
+        frame_indices=(0,),
+    )
+    result["checks"]["plane_offset_within_limit"] = False
+    result["status"] = "FAIL"
+    with pytest.raises(ContractError, match="recomputed decision"):
+        validate_native_depth_evaluation(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("measured_plane_distance_m", 9.0),
+        ("plane_offset_mm", 0.0),
+        ("distance_scale_ratio", 1.0),
+        ("median_absolute_depth_residual_mm", 0.0),
+    ],
+)
+def test_metric_depth_frame_summaries_are_recomputed_from_measurement_evidence(
+    field: str, value: float
+) -> None:
+    result = evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=_frames(1000, count=1),
+        frame_indices=(0,),
+    )
+    forged = deepcopy(result)
+    frame = forged["per_frame"][0]
+    frame[field] = value
+    with pytest.raises(ContractError, match=r"measurement evidence|distance identity"):
+        validate_native_depth_evaluation(forged)
+
+
+def test_native_depth_sanity_rejects_duplicate_frame_indices() -> None:
+    with pytest.raises(ContractError, match="frame indices must be unique"):
+        evaluate_native_depth_sanity(
+            target=_target(),
+            calibration=_factory(),
+            T_detection_from_target=_front_pose(),
+            detection_stream="color",
+            frames=_frames(750, count=2),
+            frame_indices=(0, 0),
+        )
 
 
 def test_native_depth_sanity_skips_an_unsupported_projection_model() -> None:

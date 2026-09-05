@@ -49,6 +49,7 @@ from camera_rig.provision.preflight import (
     _validate_evidence_destination,
     run_fixed_provision_preflight,
 )
+from camera_rig.provision.validation import _recompute_native_depth_evaluation
 from camera_rig.provision.workflow import (
     ProvisionWorkflowDependencies,
     run_fixed_provision_workflow,
@@ -404,6 +405,13 @@ def test_fixed_provision_workflow_uses_one_session_and_stages_modular_artifacts(
     assert result.stream_validation.received_frames == 300
     assert result.fixed_calibration.quality.passed
     assert result.fixed_mount.quality.passed
+    recomputed_depth = _recompute_native_depth_evaluation(
+        artifact_root=staging,
+        factory=result.factory_calibration,
+        target=validate_target_artifact(staging / result.files["target_spec"]),
+        fixed=result.fixed_calibration,
+    )
+    assert recomputed_depth == result.fixed_calibration.aggregate["native_depth_sanity"]
     np.testing.assert_allclose(
         result.fixed_calibration.T_detection_from_target.matrix,
         _known_pose(config.fixed_calibration_config.target_frame).matrix,

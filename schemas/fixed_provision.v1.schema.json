@@ -38,6 +38,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["artifact", "expected_sha256", "detection_stream"],
+      "dependentRequired": {
+        "metrology_artifact": ["metrology_expected_sha256"],
+        "metrology_expected_sha256": ["metrology_artifact"]
+      },
       "properties": {
         "artifact": {
           "type": "string",
@@ -53,6 +57,15 @@
         },
         "detection_policy": {
           "enum": ["legacy_strict", "pose_validated", "uncertainty_validated"]
+        },
+        "metrology_artifact": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!file://)(?!.*\\\\).+\\S.*$"
+        },
+        "metrology_expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },

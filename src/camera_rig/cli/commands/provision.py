@@ -87,6 +87,7 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
             stream_validation=result.stream_validation,
             target_detection=result.target_detection,
             fixed_calibration=result.fixed_calibration,
+            bootstrap_qualification=result.bootstrap_qualification,
             provenance={
                 "camera_rig_version": __version__,
                 "config_sha256": config_sha256,
@@ -108,6 +109,26 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
                 stream_validation=staging / result.files["stream_validation"],
                 target_detection_overlays=_overlay_inputs(staging, result.detection_overlays),
                 fixed_calibration_overlays=_overlay_inputs(staging, result.fixed_overlays),
+                target_scale_acceptance_policy=(
+                    staging / result.files["target_scale_acceptance_policy"]
+                    if result.bootstrap_qualification is not None
+                    else None
+                ),
+                target_metrology=(
+                    staging / result.files["target_metrology"]
+                    if result.bootstrap_qualification is not None
+                    else None
+                ),
+                metric_depth_receipt=(
+                    staging / result.files["metric_depth_receipt"]
+                    if result.bootstrap_qualification is not None
+                    else None
+                ),
+                bootstrap_qualification=(
+                    staging / result.files["bootstrap_qualification"]
+                    if result.bootstrap_qualification is not None
+                    else None
+                ),
             ),
             artifact_id=artifact_id,
             created_at=created_at,

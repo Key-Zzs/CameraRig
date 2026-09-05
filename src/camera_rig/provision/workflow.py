@@ -34,7 +34,11 @@ from camera_rig.calibration.fixed.calibrator import (
     FixedCalibrationFrameGateError,
     FixedCameraCalibrator,
 )
-from camera_rig.calibration.fixed.depth_sanity import evaluate_native_depth_sanity
+from camera_rig.calibration.fixed.depth_sanity import (
+    build_metric_depth_receipt,
+    evaluate_native_depth_sanity,
+    write_metric_depth_receipt,
+)
 from camera_rig.calibration.fixed.overlays import (
     select_overlay_frames,
     write_fixed_pose_overlay,
@@ -52,24 +56,28 @@ from camera_rig.provision.acquisition import (
     SessionFactory,
     acquire_fixed_provision_frames,
 )
-from camera_rig.provision.config import ProvisionConfig
+from camera_rig.provision.bootstrap_qualification import (
+    build_bootstrap_qualification,
+    write_bootstrap_qualification,
+)
+from camera_rig.provision.bundle import fixed_camera_bundle_fingerprint
+from camera_rig.provision.config import (
+    BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
+    BOOTSTRAP_METRIC_DEPTH_THRESHOLDS,
+    ProvisionConfig,
+)
 from camera_rig.targets.charuco.artifact import (
     ResolvedCharucoTarget,
     ResolvedCharucoTargetV2,
 )
 from camera_rig.targets.io import validate_target_artifact
+from camera_rig.targets.metrology import (
+    TargetMetrologyReceipt,
+    load_target_metrology,
+    write_target_scale_acceptance_policy,
+)
 from camera_rig.targets.validation import validate_capture_artifact_target
 from camera_rig.version import __version__
-
-_PRINT_PROVENANCE: Mapping[str, object] = {
-    "horizontal_print_scale": 0.997,
-    "vertical_print_scale": 0.997,
-    "maximum_observed_print_scale_error": 0.003,
-    "geometry_policy": (
-        "pose uses nominal persisted target geometry; print measurement is provenance "
-        "and systematic-scale information"
-    ),
-}
 
 
 class TargetDetectionRunner(Protocol):
@@ -107,6 +115,9 @@ class ProvisionWorkflowResult:
     stream_validation: StreamValidationArtifact
     target_detection: TargetDetectionArtifact
     fixed_calibration: FixedCalibrationArtifact
+    target_metrology: TargetMetrologyReceipt | None
+    metric_depth_receipt: dict[str, object] | None
+    bootstrap_qualification: dict[str, object] | None
     files: dict[str, str]
     detection_overlays: tuple[str, ...]
     fixed_overlays: tuple[str, ...]
@@ -122,7 +133,7 @@ def run_fixed_provision_workflow(
     staging_root: str | Path,
     *,
     dependencies: ProvisionWorkflowDependencies | None = None,
-    print_provenance: Mapping[str, object] = _PRINT_PROVENANCE,
+    print_provenance: Mapping[str, object] | None = None,
     allow_failed_quality: bool = False,
 ) -> ProvisionWorkflowResult:
     """Run acquisition through fixed calibration inside one caller-owned staging root."""
@@ -130,6 +141,10 @@ def run_fixed_provision_workflow(
     deps = dependencies or ProvisionWorkflowDependencies()
     acquisition_id = str(uuid.uuid4())
     staged_target_path, target = _stage_pinned_target(config, root)
+    target_metrology, target_metrology_sha256 = _stage_target_metrology(config, root, target)
+    bootstrap_route = (
+        config.target.detection_policy == "uncertainty_validated" and target_metrology is not None
+    )
     existing_target_route = False
     existing_measurement_sha256 = ""
     if isinstance(target, ResolvedCharucoTargetV2) and target.source_type == "existing_physical":
@@ -261,6 +276,39 @@ def run_fixed_provision_workflow(
             detection_stream=config.fixed_calibration_config.detection_stream,
             frames=retained_frames,
             frame_indices=inlier_indices,
+            minimum_valid_samples=int(BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_valid_samples"]),
+            minimum_valid_frames=int(BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_valid_frames"]),
+            minimum_valid_sample_ratio=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_valid_sample_ratio"]
+            ),
+            minimum_region_valid_samples=int(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_region_valid_samples"]
+            ),
+            minimum_frame_valid_samples=int(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_frame_valid_samples"]
+            ),
+            minimum_passing_frames=int(BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_passing_frames"]),
+            minimum_passing_frame_ratio=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["minimum_passing_frame_ratio"]
+            ),
+            maximum_median_error_mm=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["maximum_median_error_mm"]
+            ),
+            maximum_p95_error_mm=float(BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["maximum_p95_error_mm"]),
+            maximum_plane_offset_mm=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["maximum_plane_offset_mm"]
+            ),
+            maximum_plane_normal_error_deg=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["maximum_plane_normal_error_deg"]
+            ),
+            maximum_scale_ratio_error=float(
+                BOOTSTRAP_METRIC_DEPTH_THRESHOLDS["maximum_scale_ratio_error"]
+            ),
+            threshold_policy={
+                "schema_version": BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
+                "source": "immutable_fixed_provision_contract",
+            },
+            fail_closed=bootstrap_route,
         )
 
     try:
@@ -274,6 +322,15 @@ def run_fixed_provision_workflow(
             target_detection_sha256=sha256_file(detection_path),
             print_provenance=(
                 {
+                    "target_metrology_status": target_metrology.status,
+                    "target_metrology_sha256": target_metrology_sha256,
+                    "geometry_policy": (
+                        "nominal target geometry is independently checked by a measured, "
+                        "hash-bound target-metrology receipt"
+                    ),
+                }
+                if target_metrology is not None
+                else {
                     "source_type": "existing_physical",
                     "physical_measurement_sha256": existing_measurement_sha256,
                     "geometry_policy": (
@@ -282,7 +339,15 @@ def run_fixed_provision_workflow(
                     ),
                 }
                 if existing_target_route
-                else print_provenance
+                else dict(
+                    print_provenance
+                    or {
+                        "measurement_status": "NOT_PROVIDED",
+                        "geometry_policy": (
+                            "historical non-bootstrap workflow; no physical scale claim"
+                        ),
+                    }
+                )
             ),
             native_depth_evaluator=native_depth_evaluator,
             provenance={
@@ -333,6 +398,47 @@ def run_fixed_provision_workflow(
     )
     if fixed.quality.passed:
         write_fixed_calibration(fixed_path, fixed)
+    metric_depth_receipt: dict[str, object] | None = None
+    bootstrap_qualification: dict[str, object] | None = None
+    if bootstrap_route:
+        assert target_metrology is not None
+        depth_value = fixed.aggregate.get("native_depth_sanity")
+        depth_evaluation = depth_value if isinstance(depth_value, dict) else {}
+        camera_identity_sha256 = _artifact_digest(factory.calibration.device.to_dict())
+        metric_depth_receipt = build_metric_depth_receipt(
+            evaluation=depth_evaluation,
+            camera_identity_sha256=camera_identity_sha256,
+            target_identity_sha256=target.artifact_sha256,
+            factory_calibration_sha256=factory_sha256,
+            capture_manifest_sha256=sha256_file(capture_manifest_path),
+        )
+        metric_path = root / "reports/metric_depth_integrity.json"
+        write_metric_depth_receipt(metric_path, metric_depth_receipt)
+        bundle_fingerprint = fixed_camera_bundle_fingerprint(
+            factory=factory,
+            stream_validation=stream_validation,
+            target_detection=detection,
+            fixed_calibration=fixed,
+        )
+        bootstrap_qualification = build_bootstrap_qualification(
+            camera_identity_sha256=camera_identity_sha256,
+            camera_bundle_fingerprint=bundle_fingerprint,
+            target_identity_sha256=target.artifact_sha256,
+            target_metrology_sha256=target_metrology_sha256,
+            metric_depth_receipt_sha256=sha256_file(metric_path),
+            stream_validation=stream_validation,
+            target_detection=detection,
+            target_metrology=target_metrology,
+            fixed_calibration=fixed,
+            provenance={"camera_rig_version": __version__, "workflow": "fixed-provision"},
+        )
+        if bootstrap_qualification["status"] != "PASS":
+            raise ContractError(
+                f"bootstrap qualification failed: {bootstrap_qualification['failure_reasons']}"
+            )
+        write_bootstrap_qualification(
+            root / "reports/bootstrap_qualification.json", bootstrap_qualification
+        )
     return ProvisionWorkflowResult(
         staging_root=root,
         selected_source_indices=acquisition.selected_source_indices,
@@ -340,6 +446,9 @@ def run_fixed_provision_workflow(
         stream_validation=stream_validation,
         target_detection=detection,
         fixed_calibration=fixed,
+        target_metrology=target_metrology,
+        metric_depth_receipt=metric_depth_receipt,
+        bootstrap_qualification=bootstrap_qualification,
         files={
             "factory_calibration": "factory/factory_calibration.json",
             "capture_manifest": "capture/calibration_snapshot/manifest.json",
@@ -347,6 +456,18 @@ def run_fixed_provision_workflow(
             "target_spec": "target/artifact/target_spec.json",
             "target_detection": "target/detection_report.json",
             "fixed_calibration": persisted_fixed_reference,
+            **(
+                {
+                    "target_scale_acceptance_policy": (
+                        "target/target_scale_acceptance_policy.json"
+                    ),
+                    "target_metrology": "target/target_metrology.json",
+                    "metric_depth_receipt": "reports/metric_depth_integrity.json",
+                    "bootstrap_qualification": "reports/bootstrap_qualification.json",
+                }
+                if bootstrap_route
+                else {}
+            ),
         },
         detection_overlays=detection_overlay_files,
         fixed_overlays=fixed_overlays,
@@ -380,6 +501,34 @@ def _stage_pinned_target(config: ProvisionConfig, root: Path) -> tuple[Path, Res
     if staged_target.artifact_sha256 != config.target.expected_sha256:
         raise ContractError("staged target artifact differs from the pinned target identity")
     return staged_path, staged_target
+
+
+def _stage_target_metrology(
+    config: ProvisionConfig,
+    root: Path,
+    target: ResolvedCharucoTarget,
+) -> tuple[TargetMetrologyReceipt | None, str]:
+    source = config.target.metrology_artifact_path
+    expected = config.target.metrology_expected_sha256
+    if source is None or expected is None:
+        return None, ""
+    if sha256_file(source) != expected:
+        raise ContractError("target metrology SHA does not match the pinned provision identity")
+    receipt = load_target_metrology(
+        source,
+        expected_target=target,
+        require_pass=True,
+    )
+    destination = root / "target/target_metrology.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    if sha256_file(destination) != expected:
+        raise ContractError("staged target metrology differs from pinned identity")
+    write_target_scale_acceptance_policy(
+        root / "target/target_scale_acceptance_policy.json",
+        receipt.acceptance_policy,
+    )
+    return receipt, expected
 
 
 def _factory_artifact(

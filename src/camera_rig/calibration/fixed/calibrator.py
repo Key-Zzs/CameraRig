@@ -361,7 +361,10 @@ class FixedCameraCalibrator:
             uncertainty_thresholds=self._uncertainty_thresholds,
             observable_frame_ratio=observable_frame_ratio if uncertainty_policy else None,
             ambiguous_frame_ratio=ambiguous_frame_ratio if uncertainty_policy else None,
-            require_native_depth_pass=print_evidence.get("source_type") == "existing_physical",
+            require_native_depth_pass=(
+                print_evidence.get("source_type") == "existing_physical"
+                or print_evidence.get("target_metrology_status") == "PASS"
+            ),
         )
         final_reprojection_decision = evaluate_fixed_pose_final_reprojection(
             global_reprojection=_mapping(reprojection["global"]),
@@ -517,7 +520,7 @@ class FixedCameraCalibrator:
                         "ambiguous_frame_ratio": ambiguous_frame_ratio,
                         "final_pose_observability": final_pose_observability,
                         "residual_diagnostics": {
-                            "role": "candidate_structured_gate_not_enforced_while_hold",
+                            "role": "diagnostic_only",
                             "all_observations_diagnostic": final_residual_diagnostics,
                             "final_shared_pose": final_structured_diagnostics,
                         },
@@ -984,7 +987,23 @@ def _validated_print_provenance(value: Mapping[str, object]) -> dict[str, object
         "physical_measurement_sha256",
         "geometry_policy",
     }
-    if set(result) == existing:
+    unmeasured = {"measurement_status", "geometry_policy"}
+    measured_receipt = {
+        "target_metrology_status",
+        "target_metrology_sha256",
+        "geometry_policy",
+    }
+    if set(result) == measured_receipt:
+        if result["target_metrology_status"] != "PASS":
+            raise ContractError("target metrology print provenance is not passed")
+        _require_digest(
+            result["target_metrology_sha256"],
+            "print_provenance.target_metrology_sha256",
+        )
+    elif set(result) == unmeasured:
+        if result["measurement_status"] != "NOT_PROVIDED":
+            raise ContractError("unmeasured print provenance status is invalid")
+    elif set(result) == existing:
         if result["source_type"] != "existing_physical":
             raise ContractError("existing-target print provenance source_type is invalid")
         _require_digest(

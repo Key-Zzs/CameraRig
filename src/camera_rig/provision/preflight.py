@@ -184,7 +184,7 @@ def _build_preflight_report(
     fixed_evaluated = target_evaluated and bool(fixed)
     quality = _mapping(fixed.get("quality")) if fixed else {}
     numerical_pass = fixed_evaluated and quality.get("passed") is True
-    release_eligible = _release_eligible(config, fixed)
+    release_eligible = _release_eligible(config, fixed, result)
     would_pass = numerical_pass and release_eligible
     per_frame = _mapping_list(fixed.get("per_frame_pose_summary")) if fixed else []
     solved = [item for item in per_frame if item.get("T_camera_from_target") is not None]
@@ -292,11 +292,18 @@ def _publish_evidence(staging: Path, destination: Path) -> None:
         shutil.rmtree(temporary_root, ignore_errors=True)
 
 
-def _release_eligible(config: ProvisionConfig, fixed: dict[str, object]) -> bool:
+def _release_eligible(
+    config: ProvisionConfig, fixed: dict[str, object], result: object | None
+) -> bool:
     if not fixed:
         return config.target.detection_policy != "uncertainty_validated"
     solver = _mapping(fixed.get("solver")) if fixed else {}
-    return solver_release_eligible(solver, {"policy": config.target.detection_policy})
+    qualification = getattr(result, "bootstrap_qualification", None)
+    return solver_release_eligible(
+        solver,
+        {"policy": config.target.detection_policy},
+        bootstrap_qualification=(qualification if isinstance(qualification, dict) else None),
+    )
 
 
 def _reprojection_summary(
