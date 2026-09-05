@@ -19,9 +19,13 @@ from camera_rig.artifacts.target_detection import TargetDetectionArtifact
 from camera_rig.calibration.fixed.artifact import FixedCalibrationArtifact
 from camera_rig.calibration.fixed.depth_sanity import validate_native_depth_evaluation
 from camera_rig.core.errors import ArtifactError, ContractError
+from camera_rig.provision.manual_waiver import (
+    validate_bootstrap_depth_manual_waiver_data,
+)
 from camera_rig.targets.metrology import TargetMetrologyReceipt
 
 BOOTSTRAP_QUALIFICATION_SCHEMA_VERSION: Final = "camera-rig.fixed-bootstrap-qualification.v1"
+BOOTSTRAP_QUALIFICATION_V2_SCHEMA_VERSION: Final = "camera-rig.fixed-bootstrap-qualification.v2"
 STRUCTURED_RESIDUAL_PRODUCTION_GATE: Final = "NOT_SUPPORTED_DUE_TO_PLANAR_IDENTIFIABILITY_LIMIT"
 _CATASTROPHIC_ROLE: Final = "gross_invalid_projection_or_pnp_ceiling_only"
 _CATASTROPHIC_DOES_NOT_PROVE: Final = [
@@ -62,6 +66,7 @@ def build_bootstrap_qualification(
     target_metrology: TargetMetrologyReceipt,
     fixed_calibration: FixedCalibrationArtifact,
     provenance: dict[str, object],
+    bootstrap_depth_manual_waiver: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a white-listed bootstrap decision; structured residuals never affect it."""
     for name, digest in (
@@ -81,7 +86,9 @@ def build_bootstrap_qualification(
     depth_value = fixed_calibration.aggregate.get("native_depth_sanity")
     native_depth = depth_value if isinstance(depth_value, dict) else {}
     validate_native_depth_evaluation(
-        native_depth, require_pass=True, require_fixed_bootstrap_policy=True
+        native_depth,
+        require_pass=native_depth.get("status") == "PASS",
+        require_fixed_bootstrap_policy=True,
     )
     uncertainty_route = fixed_calibration.solver.get("pose_policy") == "uncertainty_validated"
     checks = {
@@ -119,13 +126,36 @@ def build_bootstrap_qualification(
         "metric_native_depth_integrity": native_depth.get("status") == "PASS",
     }
     failures = [name for name, passed in checks.items() if not passed]
+    waiver = None
+    if bootstrap_depth_manual_waiver is not None:
+        waiver = validate_bootstrap_depth_manual_waiver_data(bootstrap_depth_manual_waiver)
+        if waiver["camera_identity_sha256"] != camera_identity_sha256:
+            raise ContractError("bootstrap depth manual waiver camera identity differs")
+        if waiver["target_identity_sha256"] != target_identity_sha256:
+            raise ContractError("bootstrap depth manual waiver target identity differs")
+        if failures != ["metric_native_depth_integrity"]:
+            raise ContractError(
+                "bootstrap depth manual waiver requires metric depth to be the only failure"
+            )
+    effective_checks = dict(checks)
+    if waiver is not None:
+        effective_checks["metric_native_depth_integrity"] = True
+    effective_failures = [name for name, passed in effective_checks.items() if not passed]
     structured_value = quality_metrics.get("final_structured_residual")
     structured = structured_value if isinstance(structured_value, dict) else {}
     report: dict[str, object] = {
-        "schema_version": BOOTSTRAP_QUALIFICATION_SCHEMA_VERSION,
-        "status": "PASS" if not failures else "FAIL",
+        "schema_version": (
+            BOOTSTRAP_QUALIFICATION_V2_SCHEMA_VERSION
+            if waiver is not None
+            else BOOTSTRAP_QUALIFICATION_SCHEMA_VERSION
+        ),
+        "status": "PASS" if not effective_failures else "FAIL",
         "qualification_state": (
-            "BOOTSTRAP_QUALIFIED" if not failures else "BOOTSTRAP_NOT_QUALIFIED"
+            "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+            if waiver is not None and not effective_failures
+            else "BOOTSTRAP_QUALIFIED"
+            if not effective_failures
+            else "BOOTSTRAP_NOT_QUALIFIED"
         ),
         "qualification_scope": "bootstrap_only",
         "production_authoritative": False,
@@ -151,6 +181,14 @@ def build_bootstrap_qualification(
         },
         "provenance": dict(provenance),
     }
+    if waiver is not None:
+        report.update(
+            {
+                "machine_status": "PASS" if not failures else "FAIL",
+                "effective_checks": effective_checks,
+                "manual_waiver": waiver,
+            }
+        )
     report["qualification_fingerprint"] = qualification_fingerprint(report)
     return report
 
@@ -197,9 +235,16 @@ def validate_bootstrap_qualification_data(value: object) -> dict[str, object]:
         "provenance",
         "qualification_fingerprint",
     }
+    schema_version = value.get("schema_version")
+    is_v2 = schema_version == BOOTSTRAP_QUALIFICATION_V2_SCHEMA_VERSION
+    if is_v2:
+        required.update({"machine_status", "effective_checks", "manual_waiver"})
     if set(value) != required:
         raise ArtifactError("bootstrap qualification has missing or unknown fields")
-    if value.get("schema_version") != BOOTSTRAP_QUALIFICATION_SCHEMA_VERSION:
+    if schema_version not in {
+        BOOTSTRAP_QUALIFICATION_SCHEMA_VERSION,
+        BOOTSTRAP_QUALIFICATION_V2_SCHEMA_VERSION,
+    }:
         raise ArtifactError("bootstrap qualification schema is unsupported")
     if value.get("qualification_scope") != "bootstrap_only":
         raise ArtifactError("bootstrap qualification scope must be bootstrap_only")
@@ -212,11 +257,41 @@ def validate_bootstrap_qualification_data(value: object) -> dict[str, object]:
         or not all(isinstance(item, bool) for item in checks.values())
     ):
         raise ArtifactError("bootstrap qualification checks are incomplete")
-    expected_status = "PASS" if all(checks.values()) else "FAIL"
+    machine_status = "PASS" if all(checks.values()) else "FAIL"
+    effective_checks = checks
+    if is_v2:
+        waiver = validate_bootstrap_depth_manual_waiver_data(value.get("manual_waiver"))
+        if waiver["camera_identity_sha256"] != value.get("camera_identity_sha256"):
+            raise ArtifactError("bootstrap depth manual waiver camera identity differs")
+        if waiver["target_identity_sha256"] != value.get("target_identity_sha256"):
+            raise ArtifactError("bootstrap depth manual waiver target identity differs")
+        if value.get("machine_status") != machine_status or machine_status != "FAIL":
+            raise ArtifactError("bootstrap qualification machine status is invalid")
+        candidate_effective = value.get("effective_checks")
+        if (
+            not isinstance(candidate_effective, dict)
+            or set(candidate_effective) != _CHECK_NAMES
+            or not all(isinstance(item, bool) for item in candidate_effective.values())
+        ):
+            raise ArtifactError("bootstrap qualification effective checks are incomplete")
+        expected_effective = dict(checks)
+        expected_effective["metric_native_depth_integrity"] = True
+        if candidate_effective != expected_effective:
+            raise ArtifactError("bootstrap qualification effective checks are invalid")
+        if [name for name, passed in checks.items() if not passed] != [
+            "metric_native_depth_integrity"
+        ]:
+            raise ArtifactError("bootstrap depth manual waiver covers an invalid failure set")
+        effective_checks = candidate_effective
+    expected_status = "PASS" if all(effective_checks.values()) else "FAIL"
     if value.get("status") != expected_status:
         raise ArtifactError("bootstrap qualification status differs from checks")
     expected_state = (
-        "BOOTSTRAP_QUALIFIED" if expected_status == "PASS" else "BOOTSTRAP_NOT_QUALIFIED"
+        "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+        if is_v2 and expected_status == "PASS"
+        else "BOOTSTRAP_QUALIFIED"
+        if expected_status == "PASS"
+        else "BOOTSTRAP_NOT_QUALIFIED"
     )
     if value.get("qualification_state") != expected_state:
         raise ArtifactError("bootstrap qualification state differs from checks")

@@ -66,6 +66,7 @@ from camera_rig.provision.config import (
     BOOTSTRAP_METRIC_DEPTH_THRESHOLDS,
     ProvisionConfig,
 )
+from camera_rig.provision.manual_waiver import apply_bootstrap_depth_manual_waiver
 from camera_rig.targets.charuco.artifact import (
     ResolvedCharucoTarget,
     ResolvedCharucoTargetV2,
@@ -135,6 +136,7 @@ def run_fixed_provision_workflow(
     dependencies: ProvisionWorkflowDependencies | None = None,
     print_provenance: Mapping[str, object] | None = None,
     allow_failed_quality: bool = False,
+    bootstrap_depth_manual_waiver: dict[str, object] | None = None,
 ) -> ProvisionWorkflowResult:
     """Run acquisition through fixed calibration inside one caller-owned staging root."""
     root = _prepare_staging_root(staging_root)
@@ -363,6 +365,17 @@ def run_fixed_provision_workflow(
         raise
     fixed_path = root / "calibration/fixed_calibration.json"
     persisted_fixed_reference = "calibration/fixed_calibration.json"
+    if bootstrap_depth_manual_waiver is not None:
+        if not bootstrap_route:
+            raise ContractError(
+                "bootstrap depth manual waiver is valid only for uncertainty bootstrap"
+            )
+        fixed = apply_bootstrap_depth_manual_waiver(
+            fixed,
+            bootstrap_depth_manual_waiver,
+            camera_identity_sha256=device_identity_sha256,
+            target_identity_sha256=target.artifact_sha256,
+        )
     if not fixed.quality.passed:
         failed_path = root / "calibration/fixed_calibration.failed.json"
         atomic_write_json(
@@ -431,6 +444,7 @@ def run_fixed_provision_workflow(
             target_metrology=target_metrology,
             fixed_calibration=fixed,
             provenance={"camera_rig_version": __version__, "workflow": "fixed-provision"},
+            bootstrap_depth_manual_waiver=bootstrap_depth_manual_waiver,
         )
         if bootstrap_qualification["status"] != "PASS":
             raise ContractError(

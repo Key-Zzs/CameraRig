@@ -26,6 +26,14 @@ depth intrinsics 与内部 stream transforms，对比 PnP predicted target plane
 board-local distribution 及逐帧/汇总统计。支持不足、projection 不支持、非有限深度或
 plane/scale 不通过都必须 FAIL。
 
+只有显式人工授权才能让该机器 FAIL 仅作为 bootstrap initializer 继续。先用 `camera-rig
+provision bootstrap-depth-waiver` 创建私有的
+`camera-rig.bootstrap-depth-manual-waiver.v1` 回执，再向 `camera-rig provision fixed` 传入
+`--bootstrap-depth-manual-waiver`。仅当 native depth 是唯一失败项时才可应用。v2 qualification
+仍保存 `machine_status=FAIL`、原始 metric-depth payload 和未改动阈值，并标记
+`BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER`；它不能豁免 stream、pose、target、holdout、
+intrinsic-health 或三维物理验收，也绝不是 production authority。
+
 发布的 v2 provision 包含 target-scale policy、metrology、metric-depth 与 bootstrap
 qualification 回执。
 CameraBundle 权限固定为 `qualification_state=BOOTSTRAP_QUALIFIED`、

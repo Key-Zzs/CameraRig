@@ -302,9 +302,12 @@ def _validate_bootstrap_v2(
         _resolved_file(artifact_root, typed_references["bootstrap_qualification"].path),
         require_pass=True,
     )
+    depth_waived = (
+        qualification.get("qualification_state") == "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+    )
     metric_value = load_metric_depth_receipt(
         _resolved_file(artifact_root, typed_references["metric_depth_receipt"].path),
-        require_pass=True,
+        require_pass=not depth_waived,
     )
     expected_camera_identity = _digest(factory.calibration.device.to_dict())
     expected_bundle_fingerprint = fixed_camera_bundle_fingerprint(
@@ -359,14 +362,29 @@ def _validate_bootstrap_v2(
     if not isinstance(authority, dict):
         raise ArtifactError("bootstrap CameraBundle lacks calibration authority")
     expected_authority = {
-        "schema_version": "camera-rig.calibration-authority.v1",
+        "schema_version": (
+            "camera-rig.calibration-authority.v2"
+            if depth_waived
+            else "camera-rig.calibration-authority.v1"
+        ),
         "qualification_scope": "bootstrap_only",
         "production_authoritative": False,
-        "qualification_state": "BOOTSTRAP_QUALIFIED",
+        "qualification_state": qualification["qualification_state"],
         "qualification_fingerprint": qualification["qualification_fingerprint"],
         "target_metrology_sha256": typed_references["target_metrology"].sha256,
         "metric_depth_receipt_sha256": typed_references["metric_depth_receipt"].sha256,
     }
+    if depth_waived:
+        waiver = qualification.get("manual_waiver")
+        if not isinstance(waiver, dict):
+            raise ArtifactError("bootstrap depth manual waiver is missing")
+        expected_authority.update(
+            {
+                "machine_status": "FAIL",
+                "waived_check": "metric_native_depth_integrity",
+                "waiver_fingerprint": waiver["waiver_fingerprint"],
+            }
+        )
     if authority != expected_authority or metrology.status != "PASS":
         raise ArtifactError("bootstrap CameraBundle authority binding differs")
 

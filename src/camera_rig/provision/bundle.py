@@ -103,15 +103,33 @@ def build_fixed_camera_bundle(
         )
         if qualification["camera_bundle_fingerprint"] != expected_fingerprint:
             raise ContractError("bootstrap qualification bundle fingerprint differs")
-        portable_provenance["calibration_authority"] = {
-            "schema_version": "camera-rig.calibration-authority.v1",
+        waived = (
+            qualification["qualification_state"] == "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+        )
+        authority = {
+            "schema_version": (
+                "camera-rig.calibration-authority.v2"
+                if waived
+                else "camera-rig.calibration-authority.v1"
+            ),
             "qualification_scope": "bootstrap_only",
             "production_authoritative": False,
-            "qualification_state": "BOOTSTRAP_QUALIFIED",
+            "qualification_state": qualification["qualification_state"],
             "qualification_fingerprint": qualification["qualification_fingerprint"],
             "target_metrology_sha256": qualification["target_metrology_sha256"],
             "metric_depth_receipt_sha256": qualification["metric_depth_receipt_sha256"],
         }
+        if waived:
+            waiver = qualification["manual_waiver"]
+            assert isinstance(waiver, dict)
+            authority.update(
+                {
+                    "machine_status": "FAIL",
+                    "waived_check": "metric_native_depth_integrity",
+                    "waiver_fingerprint": waiver["waiver_fingerprint"],
+                }
+            )
+        portable_provenance["calibration_authority"] = authority
     checks = {name: True for name in REQUIRED_FIXED_BUNDLE_CHECKS}
     quality = QualityReport(
         passed=True,
@@ -324,7 +342,7 @@ def fixed_camera_bundle_fingerprint(
 
 
 def _validate_bootstrap_authority(value: object) -> None:
-    if not isinstance(value, dict) or set(value) != {
+    common = {
         "schema_version",
         "qualification_scope",
         "production_authoritative",
@@ -332,21 +350,39 @@ def _validate_bootstrap_authority(value: object) -> None:
         "qualification_fingerprint",
         "target_metrology_sha256",
         "metric_depth_receipt_sha256",
-    }:
+    }
+    if not isinstance(value, dict):
+        raise ContractError("bundle calibration authority is incomplete")
+    schema_version = value.get("schema_version")
+    waived = schema_version == "camera-rig.calibration-authority.v2"
+    expected_fields = (
+        common | {"machine_status", "waived_check", "waiver_fingerprint"} if waived else common
+    )
+    if set(value) != expected_fields:
         raise ContractError("bundle calibration authority is incomplete")
     if (
-        value.get("schema_version") != "camera-rig.calibration-authority.v1"
+        schema_version
+        not in {"camera-rig.calibration-authority.v1", "camera-rig.calibration-authority.v2"}
         or value.get("qualification_scope") != "bootstrap_only"
         or value.get("production_authoritative") is not False
-        or value.get("qualification_state") != "BOOTSTRAP_QUALIFIED"
+        or value.get("qualification_state")
+        != ("BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER" if waived else "BOOTSTRAP_QUALIFIED")
     ):
         raise ContractError("bundle calibration authority semantics are invalid")
-    for name in (
+    digest_names = [
         "qualification_fingerprint",
         "target_metrology_sha256",
         "metric_depth_receipt_sha256",
-    ):
+    ]
+    if waived:
+        digest_names.append("waiver_fingerprint")
+    for name in digest_names:
         _require_digest(value.get(name), f"calibration_authority.{name}")
+    if waived and (
+        value.get("machine_status") != "FAIL"
+        or value.get("waived_check") != "metric_native_depth_integrity"
+    ):
+        raise ContractError("bundle calibration waiver authority semantics are invalid")
 
 
 def _validate_fixed_bindings(

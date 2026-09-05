@@ -21,6 +21,12 @@ from camera_rig.provision.config import (
     BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
     BOOTSTRAP_METRIC_DEPTH_THRESHOLDS,
 )
+from camera_rig.provision.manual_waiver import (
+    apply_bootstrap_depth_manual_waiver,
+    build_bootstrap_depth_manual_waiver,
+    validate_bootstrap_depth_manual_waiver_data,
+    waiver_fingerprint,
+)
 from camera_rig.targets.metrology import (
     TargetMetrologyReceipt,
     TargetScaleAcceptance,
@@ -64,6 +70,103 @@ def _metric_depth() -> dict[str, object]:
             "source": "immutable_fixed_provision_contract",
         },
         fail_closed=True,
+    )
+
+
+def _failed_metric_depth() -> dict[str, object]:
+    thresholds = BOOTSTRAP_METRIC_DEPTH_THRESHOLDS
+    return evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_depth_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=_frames(1000, count=30),
+        frame_indices=tuple(range(30)),
+        minimum_valid_samples=int(thresholds["minimum_valid_samples"]),
+        minimum_valid_frames=int(thresholds["minimum_valid_frames"]),
+        minimum_valid_sample_ratio=float(thresholds["minimum_valid_sample_ratio"]),
+        minimum_region_valid_samples=int(thresholds["minimum_region_valid_samples"]),
+        minimum_frame_valid_samples=int(thresholds["minimum_frame_valid_samples"]),
+        minimum_passing_frames=int(thresholds["minimum_passing_frames"]),
+        minimum_passing_frame_ratio=float(thresholds["minimum_passing_frame_ratio"]),
+        maximum_median_error_mm=float(thresholds["maximum_median_error_mm"]),
+        maximum_p95_error_mm=float(thresholds["maximum_p95_error_mm"]),
+        maximum_plane_offset_mm=float(thresholds["maximum_plane_offset_mm"]),
+        maximum_plane_normal_error_deg=float(thresholds["maximum_plane_normal_error_deg"]),
+        maximum_scale_ratio_error=float(thresholds["maximum_scale_ratio_error"]),
+        threshold_policy={
+            "schema_version": BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
+            "source": "immutable_fixed_provision_contract",
+        },
+        fail_closed=True,
+    )
+
+
+def _waiver() -> dict[str, object]:
+    return build_bootstrap_depth_manual_waiver(
+        authorized_at="2026-09-06T10:00:00Z",
+        authorization_statement="ignore occasional depth fluctuation and continue",
+        camera_identity_sha256="a" * 64,
+        target_identity_sha256=TARGET_SHA,
+        provenance={"test": True},
+    )
+
+
+def _failed_bootstrap_fixed() -> object:
+    factory = _factory()
+    detection = _target_detection()
+    fixed = _fixed(factory, detection)
+    checks = {
+        "minimum_accepted_frames": True,
+        "minimum_accepted_ratio": True,
+        "gross_global_reprojection_rmse": True,
+        "gross_global_reprojection_p95": True,
+        "pose_translation_p95": True,
+        "pose_rotation_p95": True,
+        "split_translation_delta": True,
+        "split_rotation_delta": True,
+        "native_depth_sanity": False,
+        "observable_frame_ratio": True,
+        "ambiguous_frame_ratio": True,
+        "final_pose_observability": True,
+        "final_pose_full_rank": True,
+        "final_pose_translation_uncertainty": True,
+        "final_pose_rotation_uncertainty": True,
+        "final_pose_condition_number": True,
+        "final_pose_unambiguous": True,
+    }
+    quality = QualityReport(
+        passed=False,
+        metrics={
+            **fixed.quality.metrics,
+            "checks": checks,
+            "reprojection_decision": {
+                "policy": "uncertainty_gross_model_consistency",
+                "passed": True,
+                "checks": {
+                    "rmse_within_applied_threshold": True,
+                    "p95_within_applied_threshold": True,
+                },
+                "metrics": {"rmse_px": 0.1, "p95_px": 0.2},
+                "applied_thresholds": {
+                    "maximum_final_rmse_px": 1.5,
+                    "maximum_final_p95_px": 2.0,
+                },
+                "legacy_precision_thresholds": {
+                    "maximum_frame_rmse_px": 0.5,
+                    "maximum_frame_p95_px": 1.0,
+                },
+            },
+        },
+        thresholds=fixed.quality.thresholds,
+        failure_reasons=("native_depth_sanity",),
+    )
+    return replace(
+        fixed,
+        solver={**fixed.solver, "pose_policy": "uncertainty_validated"},
+        aggregate={**fixed.aggregate, "native_depth_sanity": _failed_metric_depth()},
+        quality=quality,
+        fixed_mount_calibration=replace(fixed.fixed_mount_calibration, quality=quality),
     )
 
 
@@ -251,3 +354,67 @@ def test_bootstrap_rejects_rehashed_metric_depth_threshold_forgery() -> None:
         validate_native_depth_evaluation(
             metric, require_pass=True, require_fixed_bootstrap_policy=True
         )
+
+
+def test_manual_depth_waiver_preserves_machine_fail_and_qualifies_bootstrap() -> None:
+    fixed = apply_bootstrap_depth_manual_waiver(
+        _failed_bootstrap_fixed(),
+        _waiver(),
+        camera_identity_sha256="a" * 64,
+        target_identity_sha256=TARGET_SHA,
+    )
+    assert fixed.quality.passed is True
+    assert fixed.aggregate["native_depth_sanity"]["status"] == "FAIL"
+    machine = fixed.quality.metrics["machine_quality_without_waiver"]
+    assert machine["passed"] is False
+    report = build_bootstrap_qualification(
+        camera_identity_sha256="a" * 64,
+        camera_bundle_fingerprint="b" * 64,
+        target_identity_sha256=TARGET_SHA,
+        target_metrology_sha256="c" * 64,
+        metric_depth_receipt_sha256="d" * 64,
+        stream_validation=_stream_validation(),
+        target_detection=_target_detection(),
+        target_metrology=_metrology(),
+        fixed_calibration=fixed,
+        provenance={},
+        bootstrap_depth_manual_waiver=_waiver(),
+    )
+    assert report["status"] == "PASS"
+    assert report["machine_status"] == "FAIL"
+    assert report["checks"]["metric_native_depth_integrity"] is False
+    assert report["effective_checks"]["metric_native_depth_integrity"] is True
+    assert report["qualification_state"] == "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+    assert validate_bootstrap_qualification_data(report) == report
+
+
+def test_manual_depth_waiver_rejects_tampering_and_non_depth_failure() -> None:
+    waiver = _waiver()
+    waiver["authorization_statement"] = "forged"
+    with pytest.raises(ArtifactError, match="fingerprint"):
+        validate_bootstrap_depth_manual_waiver_data(waiver)
+    fixed = _failed_bootstrap_fixed()
+    bad_quality = replace(
+        fixed.quality,
+        failure_reasons=("native_depth_sanity", "pose_rotation_p95"),
+    )
+    bad = replace(
+        fixed,
+        quality=bad_quality,
+        fixed_mount_calibration=replace(fixed.fixed_mount_calibration, quality=bad_quality),
+    )
+    with pytest.raises(ContractError, match="only failure"):
+        apply_bootstrap_depth_manual_waiver(
+            bad,
+            _waiver(),
+            camera_identity_sha256="a" * 64,
+            target_identity_sha256=TARGET_SHA,
+        )
+
+
+def test_manual_depth_waiver_rejects_rehashed_scope_expansion() -> None:
+    waiver = _waiver()
+    waiver["does_not_waive"] = []
+    waiver["waiver_fingerprint"] = waiver_fingerprint(waiver)
+    with pytest.raises(ArtifactError, match="semantics"):
+        validate_bootstrap_depth_manual_waiver_data(waiver)

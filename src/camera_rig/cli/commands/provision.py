@@ -20,6 +20,11 @@ from camera_rig.provision.artifact import (
 )
 from camera_rig.provision.bundle import build_fixed_camera_bundle, write_fixed_camera_bundle
 from camera_rig.provision.config import load_provision_config_with_sha256
+from camera_rig.provision.manual_waiver import (
+    build_bootstrap_depth_manual_waiver,
+    load_bootstrap_depth_manual_waiver,
+    write_bootstrap_depth_manual_waiver,
+)
 from camera_rig.provision.preflight import (
     preflight_fixed_provision,
     run_fixed_provision_preflight,
@@ -39,6 +44,14 @@ def add_provision_commands(
     fixed = groups.add_parser("fixed", help="build a complete fixed-camera artifact")
     fixed.add_argument("--config", type=Path, required=True, help="one-YAML provision config")
     fixed.add_argument("--output", type=Path, required=True, help="final artifact directory")
+    fixed.add_argument(
+        "--bootstrap-depth-manual-waiver",
+        type=Path,
+        help=(
+            "explicit human authorization artifact; only a sole machine native-depth "
+            "failure may be waived for bootstrap initialization"
+        ),
+    )
     fixed.add_argument(
         "--dry-run",
         action="store_true",
@@ -65,6 +78,16 @@ def add_provision_commands(
     validate.add_argument("--artifact", type=Path, required=True)
     validate.set_defaults(handler=_validate_provision)
 
+    waiver = groups.add_parser(
+        "bootstrap-depth-waiver",
+        help="write a private, bootstrap-only human native-depth waiver receipt",
+    )
+    waiver.add_argument("--camera-identity-sha256", required=True)
+    waiver.add_argument("--target-identity-sha256", required=True)
+    waiver.add_argument("--authorization-statement", required=True)
+    waiver.add_argument("--output", type=Path, required=True)
+    waiver.set_defaults(handler=_write_bootstrap_depth_waiver)
+
 
 def _provision_fixed(arguments: argparse.Namespace) -> int:
     output = arguments.output
@@ -72,6 +95,11 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
     staging: Path | None = None
     try:
         config, config_sha256 = load_provision_config_with_sha256(arguments.config)
+        manual_waiver = (
+            load_bootstrap_depth_manual_waiver(arguments.bootstrap_depth_manual_waiver)
+            if arguments.bootstrap_depth_manual_waiver is not None
+            else None
+        )
         plan = preflight_fixed_provision(config, output=output)
         if arguments.dry_run:
             return _print_fixed_dry_run(plan)
@@ -79,7 +107,15 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(dir=output.parent, prefix=f".{output.name}.workflow-"))
         created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        result = run_fixed_provision_workflow(config, staging)
+        result = (
+            run_fixed_provision_workflow(
+                config,
+                staging,
+                bootstrap_depth_manual_waiver=manual_waiver,
+            )
+            if manual_waiver is not None
+            else run_fixed_provision_workflow(config, staging)
+        )
         bundle = build_fixed_camera_bundle(
             bundle_id=artifact_id,
             created_at=created_at,
@@ -148,11 +184,40 @@ def _provision_fixed(arguments: argparse.Namespace) -> int:
     finally:
         if staging is not None and staging.exists():
             shutil.rmtree(staging)
+    outcome = (
+        "PASS_WITH_MANUAL_DEPTH_WAIVER"
+        if result.bootstrap_qualification is not None
+        and result.bootstrap_qualification.get("qualification_state")
+        == "BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER"
+        else "PASS"
+    )
     print(
-        "fixed provision: PASS "
+        f"fixed provision: {outcome} "
         f"(artifact_id={manifest.artifact_id}, validation_frames="
         f"{config.acquisition.stream_validation_frames}, calibration_frames="
         f"{config.acquisition.calibration_frames})"
+    )
+    return 0
+
+
+def _write_bootstrap_depth_waiver(arguments: argparse.Namespace) -> int:
+    if arguments.output.exists():
+        raise ArtifactError("bootstrap depth manual waiver output already exists")
+    report = build_bootstrap_depth_manual_waiver(
+        authorized_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        authorization_statement=arguments.authorization_statement,
+        camera_identity_sha256=arguments.camera_identity_sha256,
+        target_identity_sha256=arguments.target_identity_sha256,
+        provenance={
+            "camera_rig_version": __version__,
+            "git_commit": _git_commit(),
+            "workflow": "bootstrap-depth-manual-waiver",
+        },
+    )
+    write_bootstrap_depth_manual_waiver(arguments.output, report)
+    print(
+        "bootstrap depth manual waiver: PASS "
+        f"(fingerprint={report['waiver_fingerprint']}, production_authoritative=false)"
     )
     return 0
 

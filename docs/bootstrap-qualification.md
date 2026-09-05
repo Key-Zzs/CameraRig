@@ -34,6 +34,15 @@ residuals, robust plane offset and normal, distance-scale ratio, board-local sup
 and per-frame/aggregate statistics. Missing support, unsupported projection, non-finite
 depth, or plane/scale failure is a hard FAIL.
 
+An explicit human exception can accept that machine FAIL only for bootstrap initialization. Create
+a private `camera-rig.bootstrap-depth-manual-waiver.v1` receipt with `camera-rig provision
+bootstrap-depth-waiver`, then supply it to `camera-rig provision fixed
+--bootstrap-depth-manual-waiver`. The exception is valid only when native depth is the sole failed
+check. The v2 qualification retains `machine_status=FAIL`, the unchanged metric-depth payload and
+thresholds, and records `BOOTSTRAP_QUALIFIED_WITH_MANUAL_DEPTH_WAIVER`; it cannot waive stream,
+pose, target, holdout, intrinsic-health, or 3-D physical-acceptance gates and is never production
+authority.
+
 The published v2 provision contains the target-scale policy, metrology receipt, metric-depth
 receipt, and a bootstrap qualification receipt. Its CameraBundle carries
 `qualification_state=BOOTSTRAP_QUALIFIED`, `qualification_scope=bootstrap_only`, and
