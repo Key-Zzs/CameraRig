@@ -24,6 +24,23 @@ FIXED_PROVISION_CONFIG_SCHEMA_VERSION: Final = "camera-rig.fixed-provision.v1"
 FIXED_PROVISION_STREAM_VALIDATION_FRAMES: Final = 300
 FIXED_PROVISION_CALIBRATION_FRAMES: Final = 60
 REQUIRED_FIXED_STREAMS: Final = frozenset({"color", "depth", "ir_left", "ir_right"})
+BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION: Final = (
+    "camera-rig.metric-depth-threshold-policy.fixed-provision-a4.v1"
+)
+BOOTSTRAP_METRIC_DEPTH_THRESHOLDS: Final = {
+    "minimum_valid_samples": 300,
+    "minimum_valid_frames": 30,
+    "minimum_valid_sample_ratio": 0.50,
+    "minimum_region_valid_samples": 1,
+    "minimum_frame_valid_samples": 10,
+    "minimum_passing_frames": 30,
+    "minimum_passing_frame_ratio": 1.0,
+    "maximum_median_error_mm": 20.0,
+    "maximum_p95_error_mm": 40.0,
+    "maximum_plane_offset_mm": 20.0,
+    "maximum_plane_normal_error_deg": 3.0,
+    "maximum_scale_ratio_error": 0.03,
+}
 
 
 @dataclass(frozen=True)
@@ -51,6 +68,9 @@ class ProvisionTargetSettings:
     expected_sha256: str
     detection_stream: str
     detection_policy: str = "legacy_strict"
+    metrology_artifact_reference: str | None = None
+    metrology_artifact_path: Path | None = None
+    metrology_expected_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.artifact_path.name != "target_spec.json":
@@ -65,6 +85,26 @@ class ProvisionTargetSettings:
             "uncertainty_validated",
         }:
             raise ContractError("target.detection_policy is unsupported")
+        metrology_values = (
+            self.metrology_artifact_reference,
+            self.metrology_artifact_path,
+            self.metrology_expected_sha256,
+        )
+        if any(value is not None for value in metrology_values) and not all(
+            value is not None for value in metrology_values
+        ):
+            raise ContractError("target metrology artifact fields must be specified together")
+        if self.metrology_artifact_path is not None and self.metrology_artifact_path.name != (
+            "target_metrology.json"
+        ):
+            raise ContractError("target.metrology_artifact must name target_metrology.json")
+        if self.metrology_expected_sha256 is not None and (
+            len(self.metrology_expected_sha256) != 64
+            or any(
+                character not in "0123456789abcdef" for character in self.metrology_expected_sha256
+            )
+        ):
+            raise ContractError("target.metrology_expected_sha256 must be a lowercase digest")
 
 
 @dataclass(frozen=True)
@@ -135,6 +175,14 @@ class ProvisionConfig:
         target_reference = _relative_artifact_reference(
             _string(target["artifact"], "target.artifact")
         )
+        metrology_reference_value = target.get("metrology_artifact")
+        metrology_reference = (
+            _relative_artifact_reference(
+                _string(metrology_reference_value, "target.metrology_artifact")
+            )
+            if metrology_reference_value is not None
+            else None
+        )
         fixed_config = FixedCalibrationConfig.from_dict(
             {
                 "schema_version": FIXED_CALIBRATION_CONFIG_SCHEMA_VERSION,
@@ -172,6 +220,20 @@ class ProvisionConfig:
                 detection_policy=_string(
                     target.get("detection_policy", "legacy_strict"),
                     "target.detection_policy",
+                ),
+                metrology_artifact_reference=metrology_reference,
+                metrology_artifact_path=(
+                    (source_path.parent / metrology_reference).resolve(strict=False)
+                    if metrology_reference is not None
+                    else None
+                ),
+                metrology_expected_sha256=(
+                    _string(
+                        target.get("metrology_expected_sha256"),
+                        "target.metrology_expected_sha256",
+                    )
+                    if target.get("metrology_expected_sha256") is not None
+                    else None
                 ),
             ),
             source_path=source_path.resolve(strict=False),
