@@ -13,6 +13,13 @@ PASS/FAIL。
 回执会内嵌完整且已验证的 policy 及其 SHA-256，且回执时间必须晚于 policy 时间。v2 bootstrap
 provision 同时携带独立 policy 文件与回执，并强制二者内容及哈希一致。
 
+若既有实体测量已知，但原始重复读数、量具身份、分辨率和不确定度没有留存，操作人可以明确
+授权人工豁免。使用 `camera-rig target metrology-waiver-create`，并逐字保留授权声明。该命令
+生成独立的 `camera-rig.target-metrology-manual-waiver.v1` schema：记录报告尺寸，绑定冻结的
+policy 与靶标，把缺失测量字段保留为 null，并将机器门禁标记为 `WAIVED_NOT_EVALUATED`。
+报告尺寸与标称值一致时可获得 `PASS`，但这始终是操作人授权的例外，不得表述为机器验证过的
+物理计量证据。
+
 Native RealSense depth 是独立 metric source。Bootstrap evaluator 使用 factory depth scale、
 depth intrinsics 与内部 stream transforms，对比 PnP predicted target plane 和 measured depth，
 报告 support、signed/absolute residual、robust plane offset/normal、distance-scale ratio、

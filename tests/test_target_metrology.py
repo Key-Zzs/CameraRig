@@ -8,7 +8,9 @@ from camera_rig.artifacts.io import atomic_write_json, load_json
 from camera_rig.core.errors import ArtifactError, ContractError
 from camera_rig.targets.io import validate_target_artifact
 from camera_rig.targets.metrology import (
+    TARGET_METROLOGY_MANUAL_WAIVER_SCHEMA_VERSION,
     TargetScaleAcceptance,
+    build_manual_target_metrology_waiver,
     build_target_scale_acceptance_policy,
     evaluate_target_metrology,
     load_target_metrology,
@@ -240,6 +242,93 @@ def test_rehashed_semantic_metrology_forgery_is_rejected(
     assert isinstance(selected, dict)
     selected[field] = value
     output = tmp_path / "forged.json"
+    atomic_write_json(output, raw)
+    with pytest.raises(ArtifactError):
+        load_target_metrology(output)
+
+
+def _manual_waiver(target_path: Path, *, horizontal_mm: float, vertical_mm: float):
+    target = validate_target_artifact(target_path)
+    policy = build_target_scale_acceptance_policy(
+        created_at="2026-09-05T07:00:00Z",
+        target=target,
+        acceptance=TargetScaleAcceptance(1.0, 1500.0),
+        provenance={"authority": "test contract", "measurement_values_available": False},
+    )
+    return build_manual_target_metrology_waiver(
+        created_at="2026-09-05T09:00:00Z",
+        target=target,
+        horizontal_square_count=target.squares_x,
+        vertical_square_count=target.squares_y,
+        reported_horizontal_mm=horizontal_mm,
+        reported_vertical_mm=vertical_mm,
+        acceptance_policy=policy,
+        authority="interactive user",
+        authorization_statement="authorize manual waiver in place of machine metrology gate",
+    )
+
+
+def test_explicit_manual_waiver_passes_without_invented_measurement_fields(
+    generated_charuco_target: Path, tmp_path: Path
+) -> None:
+    target_path = generated_charuco_target / "target_spec.json"
+    target = validate_target_artifact(target_path)
+    receipt = _manual_waiver(
+        target_path,
+        horizontal_mm=target.board_width_m * 1000.0,
+        vertical_mm=target.board_height_m * 1000.0,
+    )
+    output = tmp_path / "target_metrology.json"
+    write_target_metrology(output, receipt)
+    loaded = load_target_metrology(output, expected_target=target, require_pass=True)
+
+    assert loaded.schema_version == TARGET_METROLOGY_MANUAL_WAIVER_SCHEMA_VERSION
+    assert loaded.status == "PASS"
+    assert loaded.acceptance["machine_gate_status"] == "WAIVED_NOT_EVALUATED"
+    assert loaded.measurement["instrument"] is None
+    assert loaded.measurement["uncertainty_mm"] is None
+    assert loaded.measurement["repeat_count_horizontal"] is None
+
+
+def test_manual_waiver_does_not_pass_a_dimension_mismatch(generated_charuco_target: Path) -> None:
+    target_path = generated_charuco_target / "target_spec.json"
+    target = validate_target_artifact(target_path)
+    receipt = _manual_waiver(
+        target_path,
+        horizontal_mm=target.board_width_m * 1000.0 + 1.0,
+        vertical_mm=target.board_height_m * 1000.0,
+    )
+    assert receipt.status == "FAIL"
+    assert receipt.results["checks"]["reported_horizontal_matches_nominal"] is False  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("container", "field", "value"),
+    [
+        ("measurement", "instrument", "fabricated caliper"),
+        ("measurement", "reported_horizontal_mm", 123.0),
+        ("acceptance", "machine_gate_status", "PASS"),
+        ("provenance", "authorization_statement", ""),
+    ],
+)
+def test_manual_waiver_tampering_is_rejected(
+    generated_charuco_target: Path,
+    tmp_path: Path,
+    container: str,
+    field: str,
+    value: object,
+) -> None:
+    target_path = generated_charuco_target / "target_spec.json"
+    target = validate_target_artifact(target_path)
+    raw = _manual_waiver(
+        target_path,
+        horizontal_mm=target.board_width_m * 1000.0,
+        vertical_mm=target.board_height_m * 1000.0,
+    ).to_dict()
+    selected = raw[container]
+    assert isinstance(selected, dict)
+    selected[field] = value
+    output = tmp_path / "forged-waiver.json"
     atomic_write_json(output, raw)
     with pytest.raises(ArtifactError):
         load_target_metrology(output)

@@ -20,6 +20,9 @@ from camera_rig.core.errors import ArtifactError, ContractError
 from camera_rig.targets.charuco.artifact import ResolvedCharucoTarget
 
 TARGET_METROLOGY_SCHEMA_VERSION: Final = "camera-rig.target-metrology.v1"
+TARGET_METROLOGY_MANUAL_WAIVER_SCHEMA_VERSION: Final = (
+    "camera-rig.target-metrology-manual-waiver.v1"
+)
 TARGET_SCALE_ACCEPTANCE_POLICY_SCHEMA_VERSION: Final = (
     "camera-rig.target-scale-acceptance-policy.v1"
 )
@@ -166,7 +169,7 @@ def load_target_scale_acceptance_policy(
 
 @dataclass(frozen=True)
 class TargetMetrologyReceipt:
-    """Tamper-evident-by-binding receipt for genuine physical measurements."""
+    """Tamper-evident target-metrology decision receipt."""
 
     created_at: str
     target_identity_sha256: str
@@ -180,7 +183,10 @@ class TargetMetrologyReceipt:
     schema_version: str = TARGET_METROLOGY_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != TARGET_METROLOGY_SCHEMA_VERSION:
+        if self.schema_version not in {
+            TARGET_METROLOGY_SCHEMA_VERSION,
+            TARGET_METROLOGY_MANUAL_WAIVER_SCHEMA_VERSION,
+        }:
             raise ContractError("unsupported target metrology schema")
         _timestamp(self.created_at)
         _digest(self.target_identity_sha256, "target_identity_sha256")
@@ -206,7 +212,10 @@ class TargetMetrologyReceipt:
             raise ContractError("target metrology results.checks must contain booleans")
         if (self.status == "PASS") != all(checks.values()):
             raise ContractError("target metrology status differs from its checks")
-        _validate_receipt_semantics(self)
+        if self.schema_version == TARGET_METROLOGY_SCHEMA_VERSION:
+            _validate_receipt_semantics(self)
+        else:
+            _validate_manual_waiver_semantics(self)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -385,6 +394,104 @@ def evaluate_target_metrology(
         acceptance=thresholds,
         acceptance_policy=policy,
         provenance=dict(provenance),
+    )
+
+
+def build_manual_target_metrology_waiver(
+    *,
+    created_at: str,
+    target: ResolvedCharucoTarget,
+    horizontal_square_count: int,
+    vertical_square_count: int,
+    reported_horizontal_mm: float,
+    reported_vertical_mm: float,
+    acceptance_policy: dict[str, object],
+    authority: str,
+    authorization_statement: str,
+) -> TargetMetrologyReceipt:
+    """Record an explicit human waiver without inventing missing measurement evidence."""
+
+    _timestamp(created_at)
+    policy = validate_target_scale_acceptance_policy(
+        acceptance_policy, expected_target_sha256=target.artifact_sha256
+    )
+    if _parsed_timestamp(_string(policy["created_at"], "policy.created_at")) >= _parsed_timestamp(
+        created_at
+    ):
+        raise ContractError("target-scale acceptance policy must predate manual waiver")
+    if not 1 <= horizontal_square_count <= target.squares_x:
+        raise ContractError("horizontal_square_count is outside target geometry")
+    if not 1 <= vertical_square_count <= target.squares_y:
+        raise ContractError("vertical_square_count is outside target geometry")
+    horizontal = _positive(reported_horizontal_mm, "reported_horizontal_mm")
+    vertical = _positive(reported_vertical_mm, "reported_vertical_mm")
+    nominal_horizontal = horizontal_square_count * target.square_length_m * 1000.0
+    nominal_vertical = vertical_square_count * target.square_length_m * 1000.0
+    authority_value = _string(authority, "authority")
+    statement = _string(authorization_statement, "authorization_statement")
+    horizontal_scale = horizontal / nominal_horizontal
+    vertical_scale = vertical / nominal_vertical
+    checks = {
+        "explicit_user_authorization": bool(statement.strip()),
+        "reported_horizontal_matches_nominal": _same_number(horizontal, nominal_horizontal),
+        "reported_vertical_matches_nominal": _same_number(vertical, nominal_vertical),
+    }
+    policy_sha256 = sha256_bytes(deterministic_json_bytes(policy))
+    return TargetMetrologyReceipt(
+        schema_version=TARGET_METROLOGY_MANUAL_WAIVER_SCHEMA_VERSION,
+        created_at=created_at,
+        target_identity_sha256=target.artifact_sha256,
+        status="PASS" if all(checks.values()) else "FAIL",
+        nominal={
+            "horizontal_baseline_mm": nominal_horizontal,
+            "vertical_baseline_mm": nominal_vertical,
+            "horizontal_square_count": horizontal_square_count,
+            "vertical_square_count": vertical_square_count,
+            "square_length_mm": target.square_length_m * 1000.0,
+            "board_width_mm": target.board_width_m * 1000.0,
+            "board_height_mm": target.board_height_m * 1000.0,
+            "geometry_source": "target_spec",
+        },
+        measurement={
+            "method": "user_attested_prior_physical_measurement",
+            "units": "mm",
+            "reported_horizontal_mm": horizontal,
+            "reported_vertical_mm": vertical,
+            "instrument": None,
+            "instrument_resolution_mm": None,
+            "uncertainty_mm": None,
+            "repeat_count_horizontal": None,
+            "repeat_count_vertical": None,
+            "missing_evidence": [
+                "raw_repeat_measurements",
+                "instrument_identity",
+                "instrument_resolution",
+                "measurement_uncertainty",
+            ],
+        },
+        results={
+            "horizontal_scale": horizontal_scale,
+            "vertical_scale": vertical_scale,
+            "horizontal_relative_scale_error": horizontal_scale - 1.0,
+            "vertical_relative_scale_error": vertical_scale - 1.0,
+            "scale_anisotropy": abs(horizontal_scale - vertical_scale),
+            "checks": checks,
+        },
+        acceptance={
+            "acceptance_policy_sha256": policy_sha256,
+            "mode": "MANUAL_USER_WAIVER",
+            "machine_gate_status": "WAIVED_NOT_EVALUATED",
+            "limitation": (
+                "PASS is an explicit user-authorized waiver and is not machine-validated "
+                "physical metrology evidence"
+            ),
+        },
+        acceptance_policy=policy,
+        provenance={
+            "authority": authority_value,
+            "authorization_statement": statement,
+            "source": "interactive_user_authorization",
+        },
     )
 
 
@@ -696,6 +803,142 @@ def _validate_receipt_semantics(receipt: TargetMetrologyReceipt) -> None:
     }
     if checks != expected_checks:
         raise ContractError("target metrology checks differ from recomputed decision")
+
+
+def _validate_manual_waiver_semantics(receipt: TargetMetrologyReceipt) -> None:
+    policy = validate_target_scale_acceptance_policy(
+        receipt.acceptance_policy,
+        expected_target_sha256=receipt.target_identity_sha256,
+    )
+    if _parsed_timestamp(_string(policy["created_at"], "policy.created_at")) >= _parsed_timestamp(
+        receipt.created_at
+    ):
+        raise ContractError("target-scale acceptance policy must predate manual waiver")
+    nominal_required = {
+        "horizontal_baseline_mm",
+        "vertical_baseline_mm",
+        "horizontal_square_count",
+        "vertical_square_count",
+        "square_length_mm",
+        "board_width_mm",
+        "board_height_mm",
+        "geometry_source",
+    }
+    measurement_required = {
+        "method",
+        "units",
+        "reported_horizontal_mm",
+        "reported_vertical_mm",
+        "instrument",
+        "instrument_resolution_mm",
+        "uncertainty_mm",
+        "repeat_count_horizontal",
+        "repeat_count_vertical",
+        "missing_evidence",
+    }
+    result_required = {
+        "horizontal_scale",
+        "vertical_scale",
+        "horizontal_relative_scale_error",
+        "vertical_relative_scale_error",
+        "scale_anisotropy",
+        "checks",
+    }
+    acceptance_required = {
+        "acceptance_policy_sha256",
+        "mode",
+        "machine_gate_status",
+        "limitation",
+    }
+    provenance_required = {"authority", "authorization_statement", "source"}
+    if set(receipt.nominal) != nominal_required:
+        raise ContractError("manual metrology waiver nominal fields are incomplete")
+    if set(receipt.measurement) != measurement_required:
+        raise ContractError("manual metrology waiver measurement fields are incomplete")
+    if set(receipt.results) != result_required:
+        raise ContractError("manual metrology waiver result fields are incomplete")
+    if set(receipt.acceptance) != acceptance_required:
+        raise ContractError("manual metrology waiver acceptance fields are incomplete")
+    if set(receipt.provenance) != provenance_required:
+        raise ContractError("manual metrology waiver provenance fields are incomplete")
+    if receipt.nominal.get("geometry_source") != "target_spec":
+        raise ContractError("manual metrology waiver geometry source is invalid")
+    if receipt.measurement.get("method") != "user_attested_prior_physical_measurement":
+        raise ContractError("manual metrology waiver method is invalid")
+    if receipt.measurement.get("units") != "mm":
+        raise ContractError("manual metrology waiver units must be mm")
+    unavailable_fields = (
+        "instrument",
+        "instrument_resolution_mm",
+        "uncertainty_mm",
+        "repeat_count_horizontal",
+        "repeat_count_vertical",
+    )
+    if any(receipt.measurement.get(name) is not None for name in unavailable_fields):
+        raise ContractError("manual metrology waiver must not invent unavailable evidence")
+    expected_missing = [
+        "raw_repeat_measurements",
+        "instrument_identity",
+        "instrument_resolution",
+        "measurement_uncertainty",
+    ]
+    if receipt.measurement.get("missing_evidence") != expected_missing:
+        raise ContractError("manual metrology waiver missing-evidence disclosure differs")
+    h_count = _positive_integer(receipt.nominal.get("horizontal_square_count"), "h count")
+    v_count = _positive_integer(receipt.nominal.get("vertical_square_count"), "v count")
+    square = _positive_number(receipt.nominal.get("square_length_mm"), "square length")
+    nominal_h = _positive_number(receipt.nominal.get("horizontal_baseline_mm"), "nominal h")
+    nominal_v = _positive_number(receipt.nominal.get("vertical_baseline_mm"), "nominal v")
+    if not _same_number(nominal_h, h_count * square) or not _same_number(
+        nominal_v, v_count * square
+    ):
+        raise ContractError("manual metrology waiver baselines differ from target geometry")
+    _positive_number(receipt.nominal.get("board_width_mm"), "board width")
+    _positive_number(receipt.nominal.get("board_height_mm"), "board height")
+    horizontal = _positive_number(
+        receipt.measurement.get("reported_horizontal_mm"), "reported horizontal"
+    )
+    vertical = _positive_number(
+        receipt.measurement.get("reported_vertical_mm"), "reported vertical"
+    )
+    horizontal_scale = horizontal / nominal_h
+    vertical_scale = vertical / nominal_v
+    expected_results = {
+        "horizontal_scale": horizontal_scale,
+        "vertical_scale": vertical_scale,
+        "horizontal_relative_scale_error": horizontal_scale - 1.0,
+        "vertical_relative_scale_error": vertical_scale - 1.0,
+        "scale_anisotropy": abs(horizontal_scale - vertical_scale),
+    }
+    for name, expected in expected_results.items():
+        if not _same_number(receipt.results.get(name), expected):
+            raise ContractError(f"manual metrology waiver derived result differs: {name}")
+    policy_sha256 = sha256_bytes(deterministic_json_bytes(policy))
+    if receipt.acceptance.get("acceptance_policy_sha256") != policy_sha256:
+        raise ContractError("manual metrology waiver acceptance-policy digest differs")
+    if (
+        receipt.acceptance.get("mode") != "MANUAL_USER_WAIVER"
+        or receipt.acceptance.get("machine_gate_status") != "WAIVED_NOT_EVALUATED"
+        or receipt.acceptance.get("limitation")
+        != (
+            "PASS is an explicit user-authorized waiver and is not machine-validated "
+            "physical metrology evidence"
+        )
+    ):
+        raise ContractError("manual metrology waiver disclosure differs")
+    _string(receipt.provenance.get("authority"), "manual waiver authority")
+    statement = _string(
+        receipt.provenance.get("authorization_statement"), "manual waiver authorization"
+    )
+    if receipt.provenance.get("source") != "interactive_user_authorization":
+        raise ContractError("manual metrology waiver source is invalid")
+    expected_checks = {
+        "explicit_user_authorization": bool(statement.strip()),
+        "reported_horizontal_matches_nominal": _same_number(horizontal, nominal_h),
+        "reported_vertical_matches_nominal": _same_number(vertical, nominal_v),
+    }
+    if receipt.results.get("checks") != expected_checks:
+        raise ContractError("manual metrology waiver checks differ from recomputed decision")
 
 
 def _number_list(value: object, name: str) -> tuple[float, ...]:

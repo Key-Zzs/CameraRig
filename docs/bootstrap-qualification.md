@@ -18,6 +18,15 @@ The receipt embeds the complete validated policy and its SHA-256, and its timest
 than the policy timestamp. A v2 bootstrap provision carries both the standalone policy and the
 receipt and requires their content and hashes to agree.
 
+An operator may explicitly authorize a manual waiver when prior physical measurements are known
+but their raw repeats, instrument identity, resolution, and uncertainty were not retained. Use
+`camera-rig target metrology-waiver-create` and preserve the authorization statement verbatim.
+This produces the distinct `camera-rig.target-metrology-manual-waiver.v1` schema. It records the
+reported dimensions, binds the frozen policy and target, leaves unavailable measurement fields
+null, and labels the machine gate `WAIVED_NOT_EVALUATED`. A matching nominal report may carry
+status `PASS`, but it is an operator-authorized exception and must never be described as
+machine-validated physical metrology evidence.
+
 Native RealSense depth is an independent metric source. Bootstrap evaluation uses the
 factory depth scale, depth intrinsics, and internal stream transforms to compare the
 PnP-predicted target plane with measured depth. It reports support, signed/absolute

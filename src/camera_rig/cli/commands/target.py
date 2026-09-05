@@ -18,6 +18,7 @@ from camera_rig.targets.charuco.spec import load_charuco_target_spec
 from camera_rig.targets.io import validate_target_artifact
 from camera_rig.targets.metrology import (
     TargetScaleAcceptance,
+    build_manual_target_metrology_waiver,
     build_target_scale_acceptance_policy,
     evaluate_target_metrology,
     load_target_metrology,
@@ -71,6 +72,21 @@ def add_target_commands(
     metrology.add_argument("--operator", required=True)
     metrology.add_argument("--output", type=Path, required=True)
     metrology.set_defaults(handler=_create_metrology)
+
+    waiver = subcommands.add_parser(
+        "metrology-waiver-create",
+        help="record an explicit user-authorized waiver of machine metrology",
+    )
+    waiver.add_argument("--target", type=Path, required=True)
+    waiver.add_argument("--horizontal-square-count", type=int, required=True)
+    waiver.add_argument("--vertical-square-count", type=int, required=True)
+    waiver.add_argument("--reported-horizontal-mm", type=float, required=True)
+    waiver.add_argument("--reported-vertical-mm", type=float, required=True)
+    waiver.add_argument("--acceptance-policy", type=Path, required=True)
+    waiver.add_argument("--authority", required=True)
+    waiver.add_argument("--authorization-statement", required=True)
+    waiver.add_argument("--output", type=Path, required=True)
+    waiver.set_defaults(handler=_create_metrology_waiver)
 
     metrology_validate = subcommands.add_parser(
         "metrology-validate", help="validate a target metrology receipt and target binding"
@@ -194,6 +210,30 @@ def _create_metrology(arguments: argparse.Namespace) -> int:
         f"target metrology: {receipt.status} "
         f"(horizontal_scale={receipt.results['horizontal_scale']:.8f}, "
         f"vertical_scale={receipt.results['vertical_scale']:.8f})"
+    )
+    return 0 if receipt.status == "PASS" else 2
+
+
+def _create_metrology_waiver(arguments: argparse.Namespace) -> int:
+    target = validate_target_artifact(arguments.target)
+    policy = load_target_scale_acceptance_policy(
+        arguments.acceptance_policy, expected_target_sha256=target.artifact_sha256
+    )
+    receipt = build_manual_target_metrology_waiver(
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        target=target,
+        horizontal_square_count=arguments.horizontal_square_count,
+        vertical_square_count=arguments.vertical_square_count,
+        reported_horizontal_mm=arguments.reported_horizontal_mm,
+        reported_vertical_mm=arguments.reported_vertical_mm,
+        acceptance_policy=policy,
+        authority=arguments.authority,
+        authorization_statement=arguments.authorization_statement,
+    )
+    write_target_metrology(arguments.output, receipt)
+    print(
+        f"target metrology manual waiver: {receipt.status} "
+        f"(machine_gate={receipt.acceptance['machine_gate_status']})"
     )
     return 0 if receipt.status == "PASS" else 2
 
