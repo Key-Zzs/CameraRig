@@ -4,10 +4,10 @@ Fixed provisioning combines existing CameraRig contracts behind one command. One
 YAML identifies the physical device, active profiles, capture policy, pinned target,
 workspace transform, reference stream, and numerical quality thresholds.
 
-The historical `uncertainty_validated_v1` and additive `uncertainty_validated_v2` candidate are
-both HOLD. They cannot run canonical `provision fixed`; use the retained live preflight below and
-stop. The publication examples later in this document apply only to legacy policies or to a future
-authenticated release implementation.
+For the authoritative A4 route, `uncertainty_validated` publishes a canonical v2 provision only
+when target metrology and independent native metric-depth receipts are present and every
+bootstrap check passes. The result is `BOOTSTRAP_QUALIFIED`, `bootstrap_only`, and explicitly
+not production-authoritative. The 500 x 700 route remains deferred.
 
 Use `--dry-run` to validate configuration, the complete target artifact and its pinned
 SHA-256, workspace semantics, output policy, and optional dependencies. A dry run does
@@ -63,10 +63,8 @@ if camera-rig provision fixed \
 fi
 ```
 
-A target preflight `NUMERICAL_PASS RELEASE_HOLD` is not a fixed-provision viability guarantee.
-While either uncertainty
-candidate is HOLD, the required operator sequence stops after target preflight and retained
-provision preflight. Fixed provision and provision validation remain `NOT_RUN`.
+A target-only numerical PASS is not a fixed-provision viability guarantee. Missing or failed
+metrology, raw-stream, repeatability, or metric-depth evidence stops before publication.
 
 Validate a completed artifact with:
 

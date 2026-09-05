@@ -77,6 +77,8 @@ package-dir = { "" = "src" }
 ]
 "share/camera-rig/release_manifests" = ["release_manifests/*.json"]
 "share/camera-rig/docs" = [
+  "docs/bootstrap-qualification.md",
+  "docs/bootstrap-qualification.zh-CN.md",
   "docs/calibration-quality.md",
   "docs/charuco-target.md",
   "docs/fixed-camera-calibration.md",

@@ -1,8 +1,8 @@
 # Pose-observability gate design
 
-This record defines the implementation boundary for the historical
-`uncertainty_validated_v1` candidate. Its explicit release state is HOLD; it is intentionally
-separate from raw-stream validation and from PointCloudBuilder multi-camera calibration.
+This record defines the pose-observability factor used by A4 bootstrap qualification. It is
+intentionally separate from raw-stream validation, target metrology, metric-depth integrity, and
+PointCloudBuilder multi-camera production calibration.
 
 ## Existing gate map
 

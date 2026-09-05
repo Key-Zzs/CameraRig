@@ -129,11 +129,11 @@ camera-rig provision preflight \
   --evidence-root .local/validation/structured-gate/camera_a/repeat_01
 ```
 
-`uncertainty_validated_v1` is explicitly `HOLD`, not a frozen release preset. Its live
-preflight can retain private capture/evaluation evidence under `--evidence-root`, but reports
-`UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED` and `would_publish=false` even when the candidate
-numerical checks pass. `provision fixed` refuses to build a canonical CameraBundle for this HOLD
-policy. Retained captures are offline validation inputs, not provisions.
+For the authoritative A4 route, `uncertainty_validated` may publish only with an exact
+passed target-metrology receipt and independent native metric-depth receipt. The final
+CameraBundle is `BOOTSTRAP_QUALIFIED`, `bootstrap_only`, and explicitly not production
+authority. Missing metrology, unsupported native-depth projection, insufficient support,
+or any failed bootstrap check stops publication.
 
 Evaluate one retained repeat under in-memory K/D/target counterfactuals without changing any
 capture, calibration, or provision artifact:
@@ -156,11 +156,8 @@ pose repeatability rather than recalibrating intrinsics. See
 [fixed-camera provisioning](docs/fixed-camera-provisioning.md), and
 [calibration quality](docs/calibration-quality.md).
 
-For candidate validation, `target.detection_policy: uncertainty_validated` selects the historical
-v1 HOLD profile; it is not currently eligible for a production provision. The separately named
-`uncertainty_validated_v2` structured policy is also a HOLD candidate. This codebase has no
-authenticated release loader; a future release attempt additionally requires a preregistered
-manifest and an untouched holdout meeting every bound.
+For A4 bootstrap validation, `target.detection_policy: uncertainty_validated` selects the
+metrology- and metric-depth-qualified route. It never grants production multi-camera authority.
 Coverage is still reported as operator guidance and a target-size warning, but it is not pose
 accuracy and is not a hard gate in this policy. Acceptance instead requires detection integrity,
 PnP, a catastrophic scalar reprojection ceiling, scaled-Jacobian observability, bounded
@@ -176,13 +173,10 @@ that K, D, or target geometry is correct.
 Low coverage does not guarantee a pass; it only stops coverage alone from rejecting an otherwise
 well-observed pose. `legacy_strict` and `pose_validated` retain their historical behavior.
 
-Target preflight and provision preflight answer different questions. For the uncertainty policy,
-target preflight reports `NUMERICAL_PASS RELEASE_HOLD` when target detection and pose
-observability pass; it does not guarantee that raw-stream,
-fixed-frame count/ratio, final reprojection, repeatability, split-half, or native-depth gates will
-pass. While the preset is HOLD, stop after `target preflight -> provision preflight`. Continue to
-`provision fixed -> provision validate` only in a future implementation that adds an authenticated
-criteria/holdout loader and then produces an explicitly hash-bound `RELEASED` preset.
+Target preflight and provision preflight answer different questions. A target-only numerical
+PASS does not guarantee raw-stream, metrology, fixed-frame count/ratio, final reprojection,
+repeatability, split-half, or native-depth PASS. Continue to `provision fixed -> provision
+validate` only when every bootstrap input is present; the result remains bootstrap-only.
 
 Synthetic development includes the 500 x 700 mm, 5 x 7, 100 mm-square, 75 mm-marker,
 `DICT_4X4_50` board when a D435i must remain outside the robot workspace or view it obliquely.
@@ -237,6 +231,10 @@ T_workspace_from_camera = fixed.T_parent_from_camera_reference
 Importing `camera_rig.api` does not require RealSense or OpenCV. See the
 [public API](docs/public-api.md), [stability policy](API_STABILITY.md), and
 [downstream integration guide](docs/downstream-integration.md).
+
+The A4 target-metrology, metric-depth, `BOOTSTRAP_QUALIFIED`, intrinsic-health, and
+structured-residual authority boundaries are documented in the
+[bootstrap qualification guide](docs/bootstrap-qualification.md).
 
 ## Artifacts
 

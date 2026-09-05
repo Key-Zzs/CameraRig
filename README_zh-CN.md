@@ -123,11 +123,10 @@ camera-rig provision preflight \
   --evidence-root .local/validation/structured-gate/camera_a/repeat_01
 ```
 
-`uncertainty_validated_v1` 的显式状态是 `HOLD`，不是 frozen release preset。指定
-`--evidence-root` 时，live preflight 会保留私有 capture/evaluation 证据；即使候选数值检查
-通过，也会报告 `UNCERTAINTY_VALIDATED_PRESET_NOT_RELEASED` 与 `would_publish=false`。
-`provision fixed` 会拒绝为该 HOLD 策略构建 canonical CameraBundle。保留的 capture 只能用于
-离线验证，不能当作 provision。
+权威 A4 路线中的 `uncertainty_validated` 只有在精确绑定的 target-metrology 回执和独立 native
+metric-depth 回执都 PASS 时才可发布。最终 CameraBundle 只能是 `BOOTSTRAP_QUALIFIED`、
+`bootstrap_only`，并明确不是 production authority。Metrology 缺失、native-depth projection
+不支持、support 不足或任一 bootstrap gate 失败都会停止发布。
 
 可在不修改 capture、calibration 或 provision artifact 的前提下，对某次保留采集执行内存中的
 K/D/target 反事实分析：
@@ -149,10 +148,8 @@ camera-rig calibration evaluate-model-counterfactuals \
 [固定相机配置](docs/fixed-camera-provisioning.md) 与
 [标定质量](docs/calibration-quality.md)。
 
-候选验证可设置 `target.detection_policy: uncertainty_validated`，它选择历史 v1 HOLD profile，
-当前不具备 production provision 资格。独立命名的 `uncertainty_validated_v2` structured
-policy 同样保持 HOLD；当前代码没有 authenticated release loader。未来 release 尝试还必须
-提交预注册 manifest，并让未开启的 holdout 满足全部界限。coverage 仍用于操作员
+对于 A4 bootstrap，`target.detection_policy: uncertainty_validated` 选择 metrology 与 metric
+depth 资格路线；它永远不授予 production 多相机权限。coverage 仍用于操作员
 引导和标定板尺寸诊断，但 coverage 不等于位姿精度，在此策略中也不是硬门槛。核心验收改为检测
 完整性、PnP、灾难性 scalar 重投影上限、缩放 Jacobian 可观测性、有界条件位姿不确定度、
 平面位姿歧义、时间重复性、split-half 稳定性和原生深度 sanity。重投影残差已经进入 covariance 的
@@ -164,13 +161,10 @@ diagnostic 先按物理 corner ID 对重复观测求均值，逐帧 structure �
 低 coverage 并不保证 PASS；它只是不再因 coverage 数值本身
 拒绝一个实际可观的位姿。`legacy_strict` 与 `pose_validated` 的历史语义保持不变。
 
-target preflight 与 provision preflight 回答不同问题。对于 uncertainty policy，前者的
-`NUMERICAL_PASS RELEASE_HOLD` 只说明目标检测与位姿可观测，
-不保证 raw-stream、fixed-frame 数量/比例、最终重投影、重复性、split-half 或原生深度会通过。
-preset 仍为 HOLD 时必须在 `target preflight -> provision preflight` 后停止。只有显式绑定
-release manifest hash 的 structured preset 成为 `RELEASED` 后，才能继续；该路径必须由未来
-版本新增 authenticated criteria/holdout loader 后实现，当前代码无法开启
-`provision fixed -> provision validate`。
+target preflight 与 provision preflight 回答不同问题。Target-only numerical PASS 不保证
+raw-stream、metrology、fixed-frame 数量/比例、最终重投影、重复性、split-half 或原生深度
+PASS。只有全部 bootstrap 输入齐备时才能继续 `provision fixed -> provision validate`；结果仍
+只能用于 bootstrap。
 
 合成开发覆盖 500 x 700 mm、
 5 x 7、100 mm 方格、75 mm marker、`DICT_4X4_50` 大板。但大板不会自动 PASS：marker 像素
@@ -219,6 +213,9 @@ T_workspace_from_camera = fixed.T_parent_from_camera_reference
 
 导入 `camera_rig.api` 不需要 RealSense 或 OpenCV。详见[公开 API](docs/public-api.md)、
 [稳定性策略](API_STABILITY.md)与[下游集成指南](docs/downstream-integration.md)。
+
+A4 target metrology、metric depth、`BOOTSTRAP_QUALIFIED`、intrinsic health 与
+structured-residual 权限边界见[bootstrap 资格指南](docs/bootstrap-qualification.zh-CN.md)。
 
 ## 产物
 

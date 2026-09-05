@@ -21,8 +21,9 @@ The legacy fixed-camera precision gates (unchanged for `legacy_strict` and
 | Native-depth median absolute error | at most 20 mm |
 | Native-depth p95 absolute error | at most 40 mm |
 
-The historical `uncertainty_validated_v1` thresholds are **CANDIDATE / HOLD**. They are not a
-frozen release preset and cannot publish a canonical provision:
+The `uncertainty_validated` thresholds below are only one factor in A4 bootstrap qualification.
+They cannot publish without passed target metrology and independent metric-depth evidence, and
+the resulting provision is never production-authoritative:
 
 | Check | Limit |
 | --- | ---: |
@@ -43,9 +44,10 @@ frozen release preset and cannot publish a canonical provision:
 | Material alternative separation | at least 5 mm or 5 deg |
 
 The observability, uncertainty, and ambiguity values were frozen after the metric-only
-implementation, not copied into that implementation in advance. The gross-reprojection rows
-remain release candidates until the synthetic evidence is reviewed together with fresh A/B/C
-camera evidence. The deterministic observability release sweep contains 2,304 fully visible
+implementation, not copied into that implementation in advance. The 1.5/2.0 px
+gross-reprojection rows are frozen catastrophic invalid-projection/PnP ceilings only. They do not
+prove metric accuracy and are not candidates for model or threshold search. The deterministic
+observability evidence contains 2,304 fully visible
 configurations over 40 mm and 100 mm square lengths, 0.8--4.5 m range, 0--80 degree tilt,
 center/edge/corner placement, three corner distributions, and 0.1--1.0 px noise. The 100 mm
 case represents the 5-by-7, 500-by-700 mm deployment board. The sweep brackets the three
@@ -63,12 +65,11 @@ structured amplitude. Insufficient corner/fold/rank support fails closed. For th
 pose, residuals are first averaged by physical corner ID; count, component standard deviations,
 and standard errors remain diagnostics, and the corner means—not 60×N samples—enter the test.
 
-Development evidence is deliberately not release evidence. The frozen split binds each synthetic
-base family to all of its K/D/target/warp/local/combined descendants. Threshold scans consume only
-development families. Holdout metrics remain unopened until release criteria and their SHA-256 are
-committed. Planar monocular reprojection cannot identify every uniformly scaled target or
-projectively confounded K error, so trusted target metrology and native depth remain independent
-hard gates; failure to meet the preregistered false-accept bound leaves the preset HOLD.
+The following development evidence is sealed historical evidence, not an instruction or
+authorization to resume model, split, threshold, or release searching. Planar monocular
+reprojection cannot identify every uniformly scaled target or projectively confounded K error.
+Structured residual is permanently diagnostic-only; trusted target metrology and native depth are
+independent hard gates.
 
 The additive structured successor is explicitly named `uncertainty_validated_v2`; its current
 release state is also **HOLD**. The tracked split receipt binds 3,600 deterministic families
@@ -81,16 +82,15 @@ bounds are 0.113 and 0.914. It accepts a challenging descendant in 200/207 eligi
 (upper bound 0.984). None of 4,500 scanned development threshold tuples meets all three 5% bounds.
 This closes development as HOLD without opening holdout outcomes. Moreover, the planned final
 holdout contains only 55 families, whose zero-error Wilson upper bound is 0.0653, so this split
-cannot establish the requested 5% final bound and is explicitly not release-eligible. A future
-attempt requires a new unopened split/version with adequate overall and subgroup quotas. These
+cannot establish the requested 5% final bound and is explicitly not release-eligible. The former
+proposal for a new split/version is closed and must not be performed. These
 results demonstrate the planar identifiability limit rather than establishing a favorable
 threshold. The tracked development receipt binds the private development evidence SHA-256
 `214be832de39c182bd78533fe843809d63d47829ad67769d83a89f14ad1fff6c` and threshold-scan SHA-256
 `ef86c44e2b910f3ec58e20ad1baf6912cbcfc511d9d017e847f2f92dfe16a6e4`.
 The final shared-pose run was a representative development screen with one positive plus nine
-fixed negative variants per family, not a release suite. Before any future release attempt, a new
-receipt must bind either the complete dual-sign, multi-amplitude K/D/target/warp grid or a
-statistically justified reduction protocol before its new holdout is opened.
+fixed negative variants per family, not a release suite. No new structured-residual release
+attempt, split, threshold search, or holdout opening is permitted by this contract.
 
 `camera-rig calibration evaluate-model-counterfactuals` applies focal, principal-point,
 distortion, target-scale, and coherent planar-geometry perturbations to retained observations in
@@ -103,9 +103,9 @@ across Gaussian, Brown-Conrady radial and tangential, projected 3-D board-warp, 
 cluster corruption fields. Each row records post-fit residuals, uncertainty, observability,
 ground-truth pose error, robust tail summaries, and low-order board-coordinate polynomial
 structure. It also
-evaluates a 7-by-6 grid of candidate RMSE/p95 threshold pairs rather than reporting only the
-implemented candidate. The 1.5/2.0 candidate is not fitted to one camera maximum; it must not be
-called frozen until real A/B/C residual fields and margins have been reviewed. Highly absorbable
+historically evaluated a 7-by-6 grid of candidate RMSE/p95 threshold pairs. That search is closed.
+The implemented 1.5/2.0 catastrophic ceilings are frozen before real A/B/C capture and must not
+be adjusted after residual fields or margins are reviewed. Highly absorbable
 structured fields must still pass observability, repeatability, split-half, and native-depth
 evidence; the vector-field report remains diagnostic-only in this version.
 
@@ -121,11 +121,12 @@ The corrected stress test keeps the 0.75/1.50 candidate at **HOLD**. At the 0.75
 boundary it accepts only 1,204/1,536 frame trials; its worst-cell frame false-reject Wilson upper
 bound is 0.413 and the derived 60-frame capture-failure upper bound is effectively one. It accepts
 only 405/768 positive final/shared-pose trials, with a worst-cell false-reject upper bound of 0.663.
-All 6,144 frame and 384 final 3 px structured negatives are rejected in these independent
+All 6,144 frame and 384 final 3 px structured negatives were rejected in these independent
 synthetic geometries, but the positive robustness rules fail. The per-frame policy result covers
 only scalar reprojection, uncertainty, and ambiguity; it is not mislabeled as the complete
-fixed-provision workflow. No gross threshold is frozen by this stress test, and residual structure
-remains diagnostic-only.
+fixed-provision workflow. The stress test did not itself authorize a threshold; the separate
+bootstrap contract freezes the 1.5/2.0 catastrophic ceilings. Residual structure remains
+diagnostic-only.
 
 The 0.25 px floor is deliberately conservative relative to the seven accepted/replayed
 real captures (temporal-jitter p95 0.026--0.033 px) and is independently checked by the
