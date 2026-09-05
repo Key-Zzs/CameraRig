@@ -509,10 +509,13 @@ def build_metric_depth_receipt(
     target_identity_sha256: str,
     factory_calibration_sha256: str,
     capture_manifest_sha256: str,
+    require_pass: bool = True,
 ) -> dict[str, object]:
     """Bind the independent metric-depth decision to its immutable inputs."""
     validate_native_depth_evaluation(
-        evaluation, require_pass=True, require_fixed_bootstrap_policy=True
+        evaluation,
+        require_pass=require_pass,
+        require_fixed_bootstrap_policy=True,
     )
     for name, digest in (
         ("camera_identity_sha256", camera_identity_sha256),
@@ -535,9 +538,11 @@ def build_metric_depth_receipt(
     return report
 
 
-def write_metric_depth_receipt(path: str | Path, report: dict[str, object]) -> None:
-    """Write a passed, hash-bound metric-depth receipt."""
-    validate_metric_depth_receipt_data(report, require_pass=True)
+def write_metric_depth_receipt(
+    path: str | Path, report: dict[str, object], *, require_pass: bool = True
+) -> None:
+    """Write a hash-bound metric-depth receipt, passed by default."""
+    validate_metric_depth_receipt_data(report, require_pass=require_pass)
     output = Path(path)
     if output.exists():
         raise ContractError("metric-depth receipt is immutable and already exists")
@@ -584,7 +589,7 @@ def validate_metric_depth_receipt_data(
     validate_native_depth_evaluation(
         evaluation,
         require_pass=require_pass,
-        require_fixed_bootstrap_policy=require_pass,
+        require_fixed_bootstrap_policy=True,
     )
     if value.get("status") != evaluation.get("status"):
         raise ContractError("metric-depth receipt status differs from evaluation")

@@ -424,9 +424,14 @@ def run_fixed_provision_workflow(
             target_identity_sha256=target.artifact_sha256,
             factory_calibration_sha256=factory_sha256,
             capture_manifest_sha256=sha256_file(capture_manifest_path),
+            require_pass=bootstrap_depth_manual_waiver is None,
         )
         metric_path = root / "reports/metric_depth_integrity.json"
-        write_metric_depth_receipt(metric_path, metric_depth_receipt)
+        write_metric_depth_receipt(
+            metric_path,
+            metric_depth_receipt,
+            require_pass=bootstrap_depth_manual_waiver is None,
+        )
         bundle_fingerprint = fixed_camera_bundle_fingerprint(
             factory=factory,
             stream_validation=stream_validation,

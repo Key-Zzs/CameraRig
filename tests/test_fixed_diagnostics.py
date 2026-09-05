@@ -10,7 +10,9 @@ import pytest
 from camera_rig.calibration.fixed.depth_sanity import (
     build_metric_depth_receipt,
     evaluate_native_depth_sanity,
+    load_metric_depth_receipt,
     validate_native_depth_evaluation,
+    write_metric_depth_receipt,
 )
 from camera_rig.calibration.fixed.overlays import select_overlay_frames, write_fixed_pose_overlay
 from camera_rig.calibration.pose import project_points_px
@@ -22,6 +24,10 @@ from camera_rig.core.intrinsics import CameraIntrinsics
 from camera_rig.core.quality import QualityReport
 from camera_rig.core.stream import StreamProfile
 from camera_rig.core.transforms import RigidTransform
+from camera_rig.provision.config import (
+    BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
+    BOOTSTRAP_METRIC_DEPTH_THRESHOLDS,
+)
 from camera_rig.targets.charuco.artifact import ResolvedCharucoTarget
 from camera_rig.targets.observation import TargetObservation
 
@@ -222,6 +228,48 @@ def test_metric_depth_receipt_rejects_status_only_forgery() -> None:
             factory_calibration_sha256="c" * 64,
             capture_manifest_sha256="d" * 64,
         )
+
+
+def test_metric_depth_failed_receipt_requires_explicit_nonpassing_route(tmp_path: Path) -> None:
+    thresholds = BOOTSTRAP_METRIC_DEPTH_THRESHOLDS
+    evaluation = evaluate_native_depth_sanity(
+        target=_target(),
+        calibration=_factory(),
+        T_detection_from_target=_front_pose(),
+        detection_stream="color",
+        frames=_frames(1000, count=30),
+        frame_indices=tuple(range(30)),
+        minimum_valid_samples=int(thresholds["minimum_valid_samples"]),
+        minimum_valid_frames=int(thresholds["minimum_valid_frames"]),
+        minimum_valid_sample_ratio=float(thresholds["minimum_valid_sample_ratio"]),
+        minimum_region_valid_samples=int(thresholds["minimum_region_valid_samples"]),
+        minimum_frame_valid_samples=int(thresholds["minimum_frame_valid_samples"]),
+        minimum_passing_frames=int(thresholds["minimum_passing_frames"]),
+        minimum_passing_frame_ratio=float(thresholds["minimum_passing_frame_ratio"]),
+        maximum_median_error_mm=float(thresholds["maximum_median_error_mm"]),
+        maximum_p95_error_mm=float(thresholds["maximum_p95_error_mm"]),
+        maximum_plane_offset_mm=float(thresholds["maximum_plane_offset_mm"]),
+        maximum_plane_normal_error_deg=float(thresholds["maximum_plane_normal_error_deg"]),
+        maximum_scale_ratio_error=float(thresholds["maximum_scale_ratio_error"]),
+        threshold_policy={
+            "schema_version": BOOTSTRAP_METRIC_DEPTH_POLICY_VERSION,
+            "source": "immutable_fixed_provision_contract",
+        },
+        fail_closed=True,
+    )
+    kwargs = {
+        "evaluation": evaluation,
+        "camera_identity_sha256": "a" * 64,
+        "target_identity_sha256": "b" * 64,
+        "factory_calibration_sha256": "c" * 64,
+        "capture_manifest_sha256": "d" * 64,
+    }
+    with pytest.raises(ContractError, match="not passed"):
+        build_metric_depth_receipt(**kwargs)
+    receipt = build_metric_depth_receipt(**kwargs, require_pass=False)
+    path = tmp_path / "failed-metric-depth.json"
+    write_metric_depth_receipt(path, receipt, require_pass=False)
+    assert load_metric_depth_receipt(path, require_pass=False)["status"] == "FAIL"
 
 
 def test_metric_depth_evaluation_rejects_rehashed_check_forgery() -> None:
