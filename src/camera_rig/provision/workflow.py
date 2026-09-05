@@ -147,6 +147,8 @@ def run_fixed_provision_workflow(
     bootstrap_route = (
         config.target.detection_policy == "uncertainty_validated" and target_metrology is not None
     )
+    if bootstrap_depth_manual_waiver is not None and not bootstrap_route:
+        raise ContractError("bootstrap depth manual waiver is valid only for uncertainty bootstrap")
     existing_target_route = False
     existing_measurement_sha256 = ""
     if isinstance(target, ResolvedCharucoTargetV2) and target.source_type == "existing_physical":
@@ -365,17 +367,19 @@ def run_fixed_provision_workflow(
         raise
     fixed_path = root / "calibration/fixed_calibration.json"
     persisted_fixed_reference = "calibration/fixed_calibration.json"
-    if bootstrap_depth_manual_waiver is not None:
-        if not bootstrap_route:
-            raise ContractError(
-                "bootstrap depth manual waiver is valid only for uncertainty bootstrap"
-            )
+    applied_bootstrap_depth_manual_waiver: dict[str, object] | None = None
+    if bootstrap_depth_manual_waiver is not None and not fixed.quality.passed:
+        atomic_write_json(
+            root / "calibration/fixed_calibration.machine_failed.json",
+            {"status": "failed", "fixed_calibration": fixed.to_dict()},
+        )
         fixed = apply_bootstrap_depth_manual_waiver(
             fixed,
             bootstrap_depth_manual_waiver,
             camera_identity_sha256=device_identity_sha256,
             target_identity_sha256=target.artifact_sha256,
         )
+        applied_bootstrap_depth_manual_waiver = bootstrap_depth_manual_waiver
     if not fixed.quality.passed:
         failed_path = root / "calibration/fixed_calibration.failed.json"
         atomic_write_json(
@@ -424,13 +428,13 @@ def run_fixed_provision_workflow(
             target_identity_sha256=target.artifact_sha256,
             factory_calibration_sha256=factory_sha256,
             capture_manifest_sha256=sha256_file(capture_manifest_path),
-            require_pass=bootstrap_depth_manual_waiver is None,
+            require_pass=applied_bootstrap_depth_manual_waiver is None,
         )
         metric_path = root / "reports/metric_depth_integrity.json"
         write_metric_depth_receipt(
             metric_path,
             metric_depth_receipt,
-            require_pass=bootstrap_depth_manual_waiver is None,
+            require_pass=applied_bootstrap_depth_manual_waiver is None,
         )
         bundle_fingerprint = fixed_camera_bundle_fingerprint(
             factory=factory,
@@ -449,7 +453,7 @@ def run_fixed_provision_workflow(
             target_metrology=target_metrology,
             fixed_calibration=fixed,
             provenance={"camera_rig_version": __version__, "workflow": "fixed-provision"},
-            bootstrap_depth_manual_waiver=bootstrap_depth_manual_waiver,
+            bootstrap_depth_manual_waiver=applied_bootstrap_depth_manual_waiver,
         )
         if bootstrap_qualification["status"] != "PASS":
             raise ContractError(
